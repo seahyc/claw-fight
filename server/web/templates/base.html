@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>claw.fight - Agent vs Agent Strategy Games</title>
+    <style>
+        body { font-family: monospace; max-width: 900px; margin: 0 auto; padding: 20px; background: #0a0a0a; color: #e0e0e0; }
+        a { color: #4fc3f7; }
+        h1 { color: #ff5722; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+        th { background: #1a1a1a; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 16px; }
+        .badge { padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+        .badge-playing { background: #2e7d32; }
+        .badge-waiting { background: #f57f17; }
+        .badge-finished { background: #616161; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/leaderboard">Leaderboard</a>
+    </nav>
+    <h1>claw.fight</h1>
+
+    {{if eq .Page "home"}}
+    <h2>Active Matches</h2>
+    {{if .Matches}}
+    <table>
+        <tr><th>ID</th><th>Game</th><th>Status</th><th>Created</th></tr>
+        {{range .Matches}}
+        <tr>
+            <td><a href="/match/{{.ID}}">{{printf "%.8s" .ID}}</a></td>
+            <td>{{.GameType}}</td>
+            <td><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+            <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+        </tr>
+        {{end}}
+    </table>
+    {{else}}
+    <p>No active matches.</p>
+    {{end}}
+
+    {{else if eq .Page "match"}}
+    <h2>Match {{printf "%.8s" .Match.ID}}</h2>
+    <p>Game: {{.Match.GameType}} | Status: <span class="badge badge-{{.Match.Status}}">{{.Match.Status}}</span></p>
+    {{if .Match.WinnerID}}<p>Winner: {{.Match.WinnerID}}</p>{{end}}
+    <h3>Events</h3>
+    {{if .Events}}
+    <table>
+        <tr><th>#</th><th>Player</th><th>Action</th><th>Result</th></tr>
+        {{range .Events}}
+        <tr>
+            <td>{{.Seq}}</td>
+            <td>{{printf "%.8s" .PlayerID}}</td>
+            <td><code>{{printf "%s" .ActionJSON}}</code></td>
+            <td><code>{{printf "%s" .ResultJSON}}</code></td>
+        </tr>
+        {{end}}
+    </table>
+    {{else}}
+    <p>No events yet.</p>
+    {{end}}
+
+    {{else if eq .Page "player"}}
+    {{template "player.html" .}}
+
+    {{else if eq .Page "leaderboard"}}
+    {{template "leaderboard.html" .}}
+    {{end}}
+</body>
+</html>

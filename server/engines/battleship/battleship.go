@@ -40,8 +40,9 @@ type Ship struct {
 }
 
 type Board struct {
-	Grid  [boardSize][boardSize]Cell
-	Ships []Ship
+	Grid    [boardSize][boardSize]Cell
+	ShipMap [boardSize][boardSize]int // ship index at each cell (-1 = none)
+	Ships   []Ship
 }
 
 type PlayerData struct {
@@ -61,9 +62,12 @@ func (e *Engine) MinPlayers() int    { return 2 }
 func (e *Engine) MaxPlayers() int    { return 2 }
 
 func (e *Engine) DescribeRules() string {
-	return "Classic Battleship: Place 5 ships on a 10x10 grid, then take turns firing at opponent's grid. " +
-		"Ships: Carrier(5), Battleship(4), Cruiser(3), Submarine(3), Destroyer(2). " +
-		"First to sink all opponent ships wins."
+	return "Classic Battleship on a 10x10 grid (columns A-J, rows 1-10). " +
+		"Ships: carrier(5), battleship(4), cruiser(3), submarine(3), destroyer(2). " +
+		"Phase 1 (setup): place_ships action with data: {\"ships\": [{\"name\": \"carrier\", \"start\": \"A1\", \"end\": \"A5\"}, ...]}. " +
+		"Ship names must be lowercase. Start/end are coordinates like 'A1', 'J10'. Ships must be horizontal or vertical. " +
+		"Phase 2 (play): fire action with data: {\"target\": \"B3\"}. " +
+		"You get hit/miss/sunk feedback. First to sink all opponent ships wins."
 }
 
 func (e *Engine) InitGame(players []engines.PlayerID, options map[string]any) (*engines.GameState, error) {
@@ -75,6 +79,12 @@ func (e *Engine) InitGame(players []engines.PlayerID, options map[string]any) (*
 	for _, p := range players {
 		pd := &PlayerData{
 			Board: Board{Ships: make([]Ship, len(shipDefs))},
+		}
+		// Init ship map to -1 (no ship)
+		for r := range boardSize {
+			for c := range boardSize {
+				pd.Board.ShipMap[r][c] = -1
+			}
 		}
 		for i, sd := range shipDefs {
 			pd.Board.Ships[i] = Ship{Name: sd.Name}
@@ -156,7 +166,10 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		}
 	}
 
-	// Own board: show everything
+	// Ship initial letters for display
+	shipChars := map[int]string{0: "C", 1: "B", 2: "R", 3: "S", 4: "D"} // carrier, battleship, cruiser, submarine, destroyer
+
+	// Own board: show everything with per-ship characters
 	ownBoard := make([][]string, boardSize)
 	for r := range boardSize {
 		ownBoard[r] = make([]string, boardSize)
@@ -165,11 +178,15 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 			case CellEmpty:
 				ownBoard[r][c] = "."
 			case CellShip:
-				ownBoard[r][c] = "S"
+				if ch, ok := shipChars[pd.Board.ShipMap[r][c]]; ok {
+					ownBoard[r][c] = ch
+				} else {
+					ownBoard[r][c] = "S"
+				}
 			case CellHit:
-				ownBoard[r][c] = "X"
+				ownBoard[r][c] = "H"
 			case CellMiss:
-				ownBoard[r][c] = "O"
+				ownBoard[r][c] = "M"
 			}
 		}
 	}
@@ -202,6 +219,33 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		}
 	}
 
+	// Build action schemas based on available actions
+	actionSchemas := map[string]any{}
+	for _, a := range availableActions {
+		switch a {
+		case "place_ships":
+			actionSchemas["place_ships"] = map[string]any{
+				"description": "Place all 5 ships on your board. Ships must be horizontal or vertical, no overlaps.",
+				"data": map[string]any{
+					"ships": []map[string]any{
+						{"name": "carrier", "start": "A1", "end": "A5"},
+						{"name": "battleship", "start": "C3", "end": "F3"},
+						{"name": "cruiser", "start": "E7", "end": "E9"},
+						{"name": "submarine", "start": "H2", "end": "H4"},
+						{"name": "destroyer", "start": "J5", "end": "J6"},
+					},
+				},
+				"notes": "Names must be lowercase. Coordinates: column letter (A-J) + row number (1-10). Example: A1 is top-left, J10 is bottom-right.",
+			}
+		case "fire":
+			actionSchemas["fire"] = map[string]any{
+				"description": "Fire at a coordinate on opponent's board.",
+				"data":        map[string]any{"target": "B3"},
+				"notes":       "Coordinate: column letter (A-J) + row number (1-10). Cannot fire at same cell twice.",
+			}
+		}
+	}
+
 	return &engines.PlayerView{
 		Phase:            state.Phase,
 		YourTurn:         yourTurn,
@@ -213,8 +257,9 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		AvailableActions: availableActions,
 		TurnNumber:       state.TurnNumber,
 		GameSpecific: map[string]any{
-			"ships":      shipStatus,
-			"board_size": boardSize,
+			"ships":          shipStatus,
+			"board_size":     boardSize,
+			"action_schemas": actionSchemas,
 		},
 	}
 }
@@ -383,10 +428,12 @@ func (e *Engine) applyPlaceShips(state *engines.GameState, _ engines.PlayerID, p
 		cells := shipCells(startRow, startCol, endRow, endCol)
 
 		// Find ship index
+		shipIdx := -1
 		for i, s := range pd.Board.Ships {
 			if s.Name == name {
 				pd.Board.Ships[i].Cells = cells
 				pd.Board.Ships[i].Placed = true
+				shipIdx = i
 				break
 			}
 		}
@@ -394,6 +441,7 @@ func (e *Engine) applyPlaceShips(state *engines.GameState, _ engines.PlayerID, p
 		// Mark grid
 		for _, c := range cells {
 			pd.Board.Grid[c[0]][c[1]] = CellShip
+			pd.Board.ShipMap[c[0]][c[1]] = shipIdx
 		}
 	}
 

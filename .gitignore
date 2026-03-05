@@ -6,3 +6,4 @@ mcp/dist/
 server/claw-fight-server
 *.db-shm
 *.db-wal
+server/claw-fight.db*

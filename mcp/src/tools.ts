@@ -9,68 +9,59 @@ interface ToolDef {
 
 export const toolDefinitions: ToolDef[] = [
   {
-    name: "list_games",
+    name: "play",
     description:
-      "List all available games on the claw.fight platform. Returns game names, descriptions, and player count requirements.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: "create_match",
-    description:
-      "Create a new match and get a challenge code to share with an opponent. Returns match_id, challenge code, and spectator URL.",
+      "Join or create a game match. Smart entry point: with a code, joins that specific match; without, joins an open match or creates a new one and waits. Blocks until matched with an opponent and the game starts. Returns the match ID, spectator URL, and initial game state.",
     inputSchema: {
       type: "object" as const,
       properties: {
         game_type: {
           type: "string",
-          description: "The type of game to create (e.g. 'battleship')",
+          description:
+            "Game to play: 'battleship', 'poker', or 'prisoners_dilemma'",
         },
-        options: {
-          type: "object",
-          description: "Optional game-specific configuration",
+        name: {
+          type: "string",
+          description: "Display name for your agent (e.g. 'DeepBlue')",
+        },
+        code: {
+          type: "string",
+          description:
+            "Challenge code to join a specific match. If omitted, auto-matches.",
         },
       },
       required: ["game_type"],
     },
   },
   {
-    name: "join_match",
+    name: "perform_action",
     description:
-      "Join an existing match using a challenge code. Returns match info and waits for the game to start.",
+      "Submit your move in a match. Returns the result of the action and the updated game state. If the action is invalid, returns an error - retry with a corrected action.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        code: {
+        match_id: {
           type: "string",
-          description: "The challenge code to join",
+          description: "The match ID",
+        },
+        action_type: {
+          type: "string",
+          description:
+            "Action type (game-specific, e.g. 'fire', 'place_ships', 'check', 'bet', 'cooperate', 'defect')",
+        },
+        action_data: {
+          type: "object",
+          description:
+            "Action-specific data (e.g. {target:'B5'} for fire, {amount:100} for bet)",
         },
       },
-      required: ["code"],
-    },
-  },
-  {
-    name: "find_match",
-    description:
-      "Join the matchmaking queue to find an opponent. Blocks until paired with another player. Use game_type to specify which game, or omit for any.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        game_type: {
-          type: "string",
-          description: "Optional game type filter for matchmaking",
-        },
-      },
-      required: [],
+      required: ["match_id", "action_type"],
     },
   },
   {
     name: "wait_for_turn",
     description:
-      "Block until it is your turn in the match. Returns the current game state including the board, available actions, and opponent's last action. Also returns if the game ends. This is the primary tool for game loop flow.",
+      "Block until it's your turn. Returns the current game state (board, available actions) or game over result. Use this after perform_action says it's the opponent's turn.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -83,32 +74,25 @@ export const toolDefinitions: ToolDef[] = [
     },
   },
   {
-    name: "perform_action",
+    name: "get_rules",
     description:
-      "Perform a game action on your turn. Returns the result of the action. If the action is invalid, returns an error message so you can retry with a corrected action.",
+      "Get rules for a specific game type, or list all available games if game_type is omitted. Call this before playing to understand valid actions and win conditions.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        match_id: {
+        game_type: {
           type: "string",
-          description: "The match ID",
-        },
-        action_type: {
-          type: "string",
-          description: "The type of action to perform",
-        },
-        action_data: {
-          type: "object",
-          description: "Action-specific data (e.g. coordinates, ship placement)",
+          description:
+            "Game type to get rules for. Omit to list all available games.",
         },
       },
-      required: ["match_id", "action_type", "action_data"],
+      required: [],
     },
   },
   {
     name: "get_game_state",
     description:
-      "Get the current game state without waiting. Returns the board, phase, available actions, and turn info. Use this to check state at any time.",
+      "Non-blocking check of current game state. Returns board, phase, available actions, and turn info.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -121,15 +105,19 @@ export const toolDefinitions: ToolDef[] = [
     },
   },
   {
-    name: "get_rules",
+    name: "create_match",
     description:
-      "Get the full rules description for a game type. Read this before playing to understand valid actions and win conditions.",
+      "Create a match with a challenge code to share with a specific opponent (e.g. via hotline). The opponent joins using play(code=...). For auto-matching, use play() instead.",
     inputSchema: {
       type: "object" as const,
       properties: {
         game_type: {
           type: "string",
-          description: "The game type to get rules for",
+          description: "Game type to create",
+        },
+        name: {
+          type: "string",
+          description: "Display name for your agent",
         },
       },
       required: ["game_type"],
@@ -146,47 +134,59 @@ export async function handleToolCall(
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   try {
     switch (name) {
-      case "list_games": {
-        client.send({ type: "list_games" });
-        const response = await client.waitForMessage("games_list", 10000);
-        return text(response.games);
-      }
+      case "play": {
+        const gameType = args.game_type as string;
+        const playerName = args.name as string | undefined;
+        const code = args.code as string | undefined;
 
-      case "create_match": {
-        client.send({
-          type: "create_match",
-          game_type: args.game_type,
-          options: args.options,
-        });
-        const response = await client.waitForMessage("match_created", 10000);
-        return text({
-          match_id: response.match_id,
-          code: response.code,
-          spectator_url: response.spectator_url,
-          game_type: response.game_type,
-          status: response.status,
-        });
-      }
+        // Re-register with name if provided
+        if (playerName) {
+          await client.register(playerName);
+        }
 
-      case "join_match": {
-        client.send({ type: "join_match", code: args.code });
-        const response = await client.waitForMessage("match_joined", 15000);
-        return text({
-          match_id: response.match_id,
-          game_type: response.game_type,
-          status: response.status,
-          spectator_url: response.spectator_url,
-        });
-      }
+        let matchId: string;
+        let spectatorUrl: string;
 
-      case "find_match": {
-        client.send({
-          type: "find_match",
-          game_type: args.game_type,
-        });
+        if (code) {
+          // Join specific match by code
+          client.send({ type: "join_match", code });
+          const joined = await client.waitForMessage("match_joined", 15000);
+          matchId = joined.match_id;
+          spectatorUrl = joined.spectator_url;
+        } else {
+          // Smart flow: find_match (server checks open matches, then queues)
+          client.send({ type: "find_match", game_type: gameType });
 
-        // Send progress while waiting for matchmaking
-        const progressInterval = progressToken
+          // Progress while waiting for opponent
+          const progressInterval = progressToken
+            ? setInterval(() => {
+                server.notification({
+                  method: "notifications/progress",
+                  params: {
+                    progressToken: progressToken!,
+                    progress: 0,
+                    total: 0,
+                    message: "Searching for opponent...",
+                  },
+                });
+              }, 10000)
+            : undefined;
+
+          try {
+            const found = await client.waitForMessage("match_found", 300000);
+            matchId = found.match_id;
+            spectatorUrl = found.spectator_url || `/match/${matchId}`;
+          } finally {
+            if (progressInterval) clearInterval(progressInterval);
+          }
+        }
+
+        // Signal ready
+        client.send({ type: "ready", match_id: matchId });
+
+        // Wait for game to start and get initial state
+        // Progress while waiting for game start
+        const startProgress = progressToken
           ? setInterval(() => {
               server.notification({
                 method: "notifications/progress",
@@ -194,22 +194,109 @@ export async function handleToolCall(
                   progressToken: progressToken!,
                   progress: 0,
                   total: 0,
-                  message: "Searching for opponent...",
+                  message: "Waiting for game to start...",
                 },
               });
             }, 10000)
           : undefined;
 
         try {
-          const response = await client.waitForMessage("match_found", 300000);
+          // Wait for your_turn (initial game state) or game_start then your_turn
+          const state = await client.waitForTurn(matchId, (msg) => {
+            if (progressToken) {
+              server.notification({
+                method: "notifications/progress",
+                params: {
+                  progressToken: progressToken!,
+                  progress: 0,
+                  total: 0,
+                  message: msg,
+                },
+              });
+            }
+          });
+
           return text({
-            match_id: response.match_id,
-            game_type: response.game_type,
-            status: response.status,
-            spectator_url: response.spectator_url,
+            match_id: matchId,
+            spectator_url: spectatorUrl,
+            phase: state.phase,
+            your_turn: state.your_turn,
+            simultaneous: state.simultaneous,
+            board: state.board,
+            available_actions: state.available_actions,
+            turn_number: state.turn_number,
+            game_specific: state.game_specific,
           });
         } finally {
-          if (progressInterval) clearInterval(progressInterval);
+          if (startProgress) clearInterval(startProgress);
+        }
+      }
+
+      case "perform_action": {
+        client.send({
+          type: "action",
+          match_id: args.match_id,
+          action_type: args.action_type,
+          action_data: args.action_data || {},
+        });
+
+        const response = await client.waitForMessage("action_result", 30000);
+
+        if (!response.success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    message: response.message,
+                    data: response.data,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // After a successful action, wait briefly for the next your_turn or game_over
+        try {
+          const next = await client.waitForTurn(args.match_id, () => {});
+
+          if (next.type === "game_over") {
+            return text({
+              success: true,
+              message: response.message,
+              data: response.data,
+              game_over: true,
+              winner: next.winner,
+              draw: next.draw,
+              scores: next.scores,
+              reason: next.reason,
+            });
+          }
+
+          return text({
+            success: true,
+            message: response.message,
+            data: response.data,
+            your_turn: next.your_turn,
+            phase: next.phase,
+            board: next.board,
+            available_actions: next.available_actions,
+            turn_number: next.turn_number,
+            game_specific: next.game_specific,
+          });
+        } catch {
+          // If we can't get next state quickly, just return the action result
+          return text({
+            success: true,
+            message: response.message,
+            data: response.data,
+          });
         }
       }
 
@@ -249,46 +336,24 @@ export async function handleToolCall(
           simultaneous: response.simultaneous,
           board: response.board,
           available_actions: response.available_actions,
-          last_action: response.last_action,
           turn_number: response.turn_number,
           game_specific: response.game_specific,
         });
       }
 
-      case "perform_action": {
-        client.send({
-          type: "action",
-          match_id: args.match_id,
-          action_type: args.action_type,
-          action_data: args.action_data,
-        });
-        const response = await client.waitForMessage("action_result", 10000);
-
-        if (!response.success) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    success: false,
-                    message: response.message,
-                    data: response.data,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-            isError: true,
-          };
+      case "get_rules": {
+        if (args.game_type) {
+          client.send({ type: "get_rules", game_type: args.game_type });
+          const response = await client.waitForMessage("rules", 10000);
+          return text({ game_type: response.game_type, rules: response.rules });
+        } else {
+          client.send({ type: "list_games" });
+          const response = await client.waitForMessage("games_list", 10000);
+          return text({
+            games: response.games,
+            open_matches: response.open_matches,
+          });
         }
-
-        return text({
-          success: true,
-          message: response.message,
-          data: response.data,
-        });
       }
 
       case "get_game_state": {
@@ -300,16 +365,29 @@ export async function handleToolCall(
           simultaneous: response.simultaneous,
           board: response.board,
           available_actions: response.available_actions,
-          last_action: response.last_action,
           turn_number: response.turn_number,
           game_specific: response.game_specific,
         });
       }
 
-      case "get_rules": {
-        client.send({ type: "get_rules", game_type: args.game_type });
-        const response = await client.waitForMessage("rules", 10000);
-        return text({ game_type: response.game_type, rules: response.rules });
+      case "create_match": {
+        if (args.name) {
+          await client.register(args.name);
+        }
+        client.send({
+          type: "create_match",
+          game_type: args.game_type,
+        });
+        const response = await client.waitForMessage("match_created", 10000);
+        return text({
+          match_id: response.match_id,
+          code: response.code,
+          spectator_url: response.spectator_url,
+          message:
+            "Match created. Share the code with your opponent. They join with: play(game_type, code='" +
+            response.code +
+            "')",
+        });
       }
 
       default:

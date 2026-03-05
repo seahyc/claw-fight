@@ -26,7 +26,7 @@ type Server struct {
 	matchmaker *Matchmaker
 	tournMgr   *TournamentManager
 	db         *DB
-	pages      map[string]*template.Template
+	funcMap    template.FuncMap
 }
 
 func main() {
@@ -60,21 +60,13 @@ func main() {
 		"eq": func(a, b string) bool { return a == b },
 	}
 
-	pages := map[string]*template.Template{
-		"home":        template.Must(template.New("").Funcs(funcMap).ParseFiles("web/templates/layout.html", "web/templates/home.html")),
-		"match":       template.Must(template.New("").Funcs(funcMap).ParseFiles("web/templates/layout.html", "web/templates/match.html")),
-		"player":      template.Must(template.New("").Funcs(funcMap).ParseFiles("web/templates/layout.html", "web/templates/player.html")),
-		"tournaments": template.Must(template.New("").Funcs(funcMap).ParseFiles("web/templates/layout.html", "web/templates/tournaments.html")),
-		"tournament":  template.Must(template.New("").Funcs(funcMap).ParseFiles("web/templates/layout.html", "web/templates/tournament.html")),
-	}
-
 	srv := &Server{
 		hub:        hub,
 		matchMgr:   matchMgr,
 		matchmaker: matchmaker,
 		tournMgr:   tournMgr,
 		db:         db,
-		pages:      pages,
+		funcMap:    funcMap,
 	}
 
 	mux := http.NewServeMux()
@@ -113,10 +105,24 @@ func main() {
 	}
 }
 
+var templateFiles = map[string]string{
+	"home":        "web/templates/home.html",
+	"match":       "web/templates/match.html",
+	"player":      "web/templates/player.html",
+	"tournaments": "web/templates/tournaments.html",
+	"tournament":  "web/templates/tournament.html",
+}
+
 func (s *Server) renderPage(w http.ResponseWriter, page string, data map[string]any) {
-	tmpl, ok := s.pages[page]
+	pageFile, ok := templateFiles[page]
 	if !ok {
 		http.Error(w, "page not found", 404)
+		return
+	}
+	tmpl, err := template.New("").Funcs(s.funcMap).ParseFiles("web/templates/layout.html", pageFile)
+	if err != nil {
+		log.Printf("Template parse error for %s: %v", page, err)
+		http.Error(w, "Internal server error", 500)
 		return
 	}
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
@@ -251,14 +257,16 @@ func (s *Server) handleSpectateWS(w http.ResponseWriter, r *http.Request) {
 }
 
 type WSMessage struct {
-	Type     string          `json:"type"`
-	PlayerID string          `json:"player_id,omitempty"`
-	PlayerName string        `json:"player_name,omitempty"`
-	MatchID  string          `json:"match_id,omitempty"`
-	GameType string          `json:"game_type,omitempty"`
-	Code     string          `json:"code,omitempty"`
-	Options  map[string]any  `json:"options,omitempty"`
-	Action   json.RawMessage `json:"action,omitempty"`
+	Type       string          `json:"type"`
+	PlayerID   string          `json:"player_id,omitempty"`
+	PlayerName string          `json:"player_name,omitempty"`
+	MatchID    string          `json:"match_id,omitempty"`
+	GameType   string          `json:"game_type,omitempty"`
+	Code       string          `json:"code,omitempty"`
+	Options    map[string]any  `json:"options,omitempty"`
+	Action     json.RawMessage `json:"action,omitempty"`
+	ActionType string          `json:"action_type,omitempty"`
+	ActionData map[string]any  `json:"action_data,omitempty"`
 }
 
 func (s *Server) handleClientMessage(client *Client, raw []byte) {
@@ -268,9 +276,15 @@ func (s *Server) handleClientMessage(client *Client, raw []byte) {
 		return
 	}
 
+	log.Printf("MSG from %s: type=%s match_id=%s game_type=%s action_type=%s action_data=%v action=%s", client.playerID, msg.Type, msg.MatchID, msg.GameType, msg.ActionType, msg.ActionData, string(msg.Action))
+
 	switch msg.Type {
 	case "register":
 		s.handleRegister(client, msg)
+	case "list_games":
+		s.handleListGames(client, msg)
+	case "get_rules":
+		s.handleGetRules(client, msg)
 	case "create_match":
 		s.handleCreateMatch(client, msg)
 	case "join_match":
@@ -304,6 +318,27 @@ func (s *Server) handleRegister(client *Client, msg WSMessage) {
 		"player_id": msg.PlayerID,
 	})
 	log.Printf("Player registered: %s (%s)", msg.PlayerID, msg.PlayerName)
+}
+
+func (s *Server) handleListGames(client *Client, _ WSMessage) {
+	client.SendJSON(map[string]any{
+		"type":         "games_list",
+		"games":        s.matchMgr.ListGames(),
+		"open_matches": s.matchMgr.ListOpenMatches(),
+	})
+}
+
+func (s *Server) handleGetRules(client *Client, msg WSMessage) {
+	engine := s.matchMgr.GetEngine(msg.GameType)
+	if engine == nil {
+		client.SendJSON(map[string]any{"type": "error", "message": fmt.Sprintf("unknown game type: %s", msg.GameType)})
+		return
+	}
+	client.SendJSON(map[string]any{
+		"type":      "rules",
+		"game_type": msg.GameType,
+		"rules":     engine.DescribeRules(),
+	})
 }
 
 func (s *Server) handleCreateMatch(client *Client, msg WSMessage) {
@@ -368,8 +403,17 @@ func (s *Server) handleFindMatch(client *Client, msg WSMessage) {
 }
 
 func (s *Server) handleActionMsg(client *Client, msg WSMessage) {
+	sendErr := func(message string) {
+		client.SendJSON(map[string]any{
+			"type":     "action_result",
+			"match_id": msg.MatchID,
+			"success":  false,
+			"message":  message,
+		})
+	}
+
 	if client.playerID == "" {
-		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		sendErr("must register first")
 		return
 	}
 	matchID := msg.MatchID
@@ -377,18 +421,32 @@ func (s *Server) handleActionMsg(client *Client, msg WSMessage) {
 		matchID = client.matchID
 	}
 	if matchID == "" {
-		client.SendJSON(map[string]any{"type": "error", "message": "no match specified"})
+		sendErr("no match specified")
 		return
 	}
 
 	var action engines.Action
-	if err := json.Unmarshal(msg.Action, &action); err != nil {
-		client.SendJSON(map[string]any{"type": "error", "message": "invalid action format"})
+
+	// Support both formats:
+	// 1. {action: {type: "...", data: {...}}}  (raw JSON blob)
+	// 2. {action_type: "...", action_data: {...}}  (separate fields from MCP client)
+	if msg.ActionType != "" {
+		action = engines.Action{
+			Type: msg.ActionType,
+			Data: msg.ActionData,
+		}
+	} else if len(msg.Action) > 0 {
+		if err := json.Unmarshal(msg.Action, &action); err != nil {
+			sendErr("invalid action format")
+			return
+		}
+	} else {
+		sendErr("missing action")
 		return
 	}
 
 	if err := s.matchMgr.HandleAction(matchID, client.playerID, action); err != nil {
-		// Error already sent to client in HandleAction
+		// Error already sent to client in HandleAction as action_result
 		log.Printf("Action error: %v", err)
 	}
 }
@@ -399,13 +457,13 @@ func (s *Server) handleGetState(client *Client, msg WSMessage) {
 		matchID = client.matchID
 	}
 	if matchID == "" {
-		client.SendJSON(map[string]any{"type": "error", "message": "no match specified"})
+		client.SendJSON(map[string]any{"type": "game_state", "match_id": "", "error": "no match specified"})
 		return
 	}
 
 	state, err := s.matchMgr.GetState(matchID, client.playerID)
 	if err != nil {
-		client.SendJSON(map[string]any{"type": "error", "message": err.Error()})
+		client.SendJSON(map[string]any{"type": "game_state", "match_id": matchID, "error": err.Error()})
 		return
 	}
 	client.SendJSON(state)

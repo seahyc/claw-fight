@@ -1,25 +1,27 @@
 /**
- * board_battleship.js - Battleship board renderer
+ * board_battleship.js - Battleship board renderer for spectator view
  */
 (function() {
     'use strict';
 
     var COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
     var ROWS = 10;
-    var lastActionCell = null;
 
-    function cellClass(cell) {
-        if (!cell) return 'water';
-        switch (cell.state || cell) {
-            case 'hit': return 'hit';
-            case 'miss': return 'miss';
-            case 'sunk': return 'sunk';
-            case 'ship': return 'ship';
-            default: return 'water';
-        }
-    }
+    // Ship characters -> display info
+    var CELL_MAP = {
+        '.': { cls: 'water', sym: '', label: 'Water' },
+        'C': { cls: 'ship ship-carrier', sym: '\u25A0', label: 'Carrier' },
+        'B': { cls: 'ship ship-battleship', sym: '\u25A0', label: 'Battleship' },
+        'R': { cls: 'ship ship-cruiser', sym: '\u25A0', label: 'Cruiser' },
+        'S': { cls: 'ship ship-submarine', sym: '\u25A0', label: 'Submarine' },
+        'D': { cls: 'ship ship-destroyer', sym: '\u25A0', label: 'Destroyer' },
+        'H': { cls: 'hit', sym: '\u2716', label: 'Hit' },
+        'M': { cls: 'miss', sym: '\u2022', label: 'Miss' },
+        'X': { cls: 'hit', sym: '\u2716', label: 'Hit' },
+        'O': { cls: 'miss', sym: '\u2022', label: 'Miss' }
+    };
 
-    function buildGrid(board, label, lastAction) {
+    function buildGrid(board, label) {
         var wrapper = document.createElement('div');
         wrapper.className = 'battleship-board';
 
@@ -31,7 +33,7 @@
         var grid = document.createElement('div');
         grid.className = 'battleship-grid';
 
-        // Top-left corner (empty)
+        // Top-left corner
         var corner = document.createElement('div');
         corner.className = 'battleship-header';
         grid.appendChild(corner);
@@ -54,15 +56,15 @@
             for (var ci = 0; ci < COLS.length; ci++) {
                 var cell = document.createElement('div');
                 var key = COLS[ci] + (r + 1);
-                var cellState = board && board[r] ? (board[r][ci] || board[r][key]) : null;
-                cell.className = 'battleship-cell ' + cellClass(cellState);
-                cell.dataset.coord = key;
-                cell.title = key;
-
-                if (lastAction && lastAction.col === ci && lastAction.row === r) {
-                    cell.classList.add('last-action');
+                var val = '.';
+                if (board && board[r] && board[r][ci] !== undefined) {
+                    val = board[r][ci];
                 }
-
+                var info = CELL_MAP[val] || CELL_MAP['.'];
+                cell.className = 'battleship-cell ' + info.cls;
+                cell.dataset.coord = key;
+                cell.title = key + ' - ' + info.label;
+                if (info.sym) cell.textContent = info.sym;
                 grid.appendChild(cell);
             }
         }
@@ -71,11 +73,30 @@
         return wrapper;
     }
 
-    function parseLastAction(state, playerIndex) {
-        if (!state.last_action) return null;
-        var la = state.last_action;
-        if (la.target_player !== undefined && la.target_player !== playerIndex) return null;
-        return { row: la.row, col: la.col };
+    // Ship legend
+    function buildLegend() {
+        var legend = document.createElement('div');
+        legend.className = 'ship-legend';
+        var ships = [
+            { cls: 'ship-carrier', name: 'Carrier (5)', sym: '\u25A0' },
+            { cls: 'ship-battleship', name: 'Battleship (4)', sym: '\u25A0' },
+            { cls: 'ship-cruiser', name: 'Cruiser (3)', sym: '\u25A0' },
+            { cls: 'ship-submarine', name: 'Submarine (3)', sym: '\u25A0' },
+            { cls: 'ship-destroyer', name: 'Destroyer (2)', sym: '\u25A0' },
+            { cls: 'hit', name: 'Hit', sym: '\u2716' },
+            { cls: 'miss', name: 'Miss', sym: '\u2022' }
+        ];
+        ships.forEach(function(s) {
+            var item = document.createElement('span');
+            item.className = 'legend-item';
+            var swatch = document.createElement('span');
+            swatch.className = 'legend-swatch ' + s.cls;
+            swatch.textContent = s.sym;
+            item.appendChild(swatch);
+            item.appendChild(document.createTextNode(' ' + s.name));
+            legend.appendChild(item);
+        });
+        return legend;
     }
 
     window.renderBattleshipBoard = function(state) {
@@ -84,23 +105,38 @@
 
         boardEl.innerHTML = '';
 
-        var p1Board = state.boards ? state.boards[0] : (state.player1_board || null);
-        var p2Board = state.boards ? state.boards[1] : (state.player2_board || null);
+        var players = window.MatchViewer ? window.MatchViewer.players : {};
+        var p1Name = players.p1 || 'Player 1';
+        var p2Name = players.p2 || 'Player 2';
 
-        var p1Name = (window.MatchViewer && MatchViewer.players.p1) || 'Player 1';
-        var p2Name = (window.MatchViewer && MatchViewer.players.p2) || 'Player 2';
+        var p1Board = null;
+        var p2Board = null;
 
-        var la1 = parseLastAction(state, 0);
-        var la2 = parseLastAction(state, 1);
-
-        boardEl.appendChild(buildGrid(p1Board, p1Name, la1));
-        boardEl.appendChild(buildGrid(p2Board, p2Name, la2));
-
-        if (state.phase === 'setup') {
-            var overlay = document.createElement('div');
-            overlay.style.cssText = 'text-align:center;width:100%;padding:1rem;color:var(--text-muted);font-size:1rem;';
-            overlay.textContent = 'Ship Placement Phase';
-            boardEl.insertBefore(overlay, boardEl.firstChild);
+        // state is player_views map: player_id -> PlayerView
+        var keys = Object.keys(state);
+        if (keys.length >= 2) {
+            var v1 = state[keys[0]];
+            var v2 = state[keys[1]];
+            p1Board = v1 && v1.board ? v1.board.own : null;
+            p2Board = v2 && v2.board ? v2.board.own : null;
+        } else if (keys.length === 1) {
+            var v = state[keys[0]];
+            p1Board = v && v.board ? v.board.own : null;
         }
+
+        if (state[keys[0]] && state[keys[0]].phase === 'setup') {
+            var overlay = document.createElement('div');
+            overlay.className = 'phase-banner';
+            overlay.textContent = '\u2693 Ship Placement Phase \u2693';
+            boardEl.appendChild(overlay);
+        }
+
+        boardEl.appendChild(buildLegend());
+
+        var boardsRow = document.createElement('div');
+        boardsRow.className = 'boards-row';
+        boardsRow.appendChild(buildGrid(p1Board, p1Name));
+        boardsRow.appendChild(buildGrid(p2Board, p2Name));
+        boardEl.appendChild(boardsRow);
     };
 })();

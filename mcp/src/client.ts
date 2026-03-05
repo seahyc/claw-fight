@@ -2,10 +2,10 @@ import WebSocket from "ws";
 import type { WSMessage } from "./types.js";
 
 function generatePlayerName(): string {
-  const id = Math.floor(Math.random() * 10000)
+  const suffix = Math.floor(Math.random() * 10000)
     .toString()
     .padStart(4, "0");
-  return `Agent-${id}`;
+  return `Agent-${suffix}`;
 }
 
 interface PendingWaiter {
@@ -30,8 +30,7 @@ export class GameClient {
   constructor() {
     this.serverUrl =
       process.env.CLAW_FIGHT_SERVER || "ws://localhost:8080/ws";
-    this.playerName =
-      process.env.CLAW_FIGHT_PLAYER_NAME || generatePlayerName();
+    this.playerName = generatePlayerName();
   }
 
   async connect(): Promise<void> {

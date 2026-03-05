@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultTurnTimeout = 60 * time.Second
-	defaultPrepTime    = 2 * time.Minute
+	defaultPrepTime    = 5 * time.Second
 	maxForfeits        = 3
 )
 
@@ -89,6 +89,26 @@ func (mm *MatchManager) ListGames() []map[string]any {
 		})
 	}
 	return games
+}
+
+func (mm *MatchManager) ListOpenMatches() []map[string]any {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+	var open []map[string]any
+	for _, m := range mm.matches {
+		m.mu.Lock()
+		if m.Status == StatusWaiting {
+			open = append(open, map[string]any{
+				"match_id":  m.ID,
+				"game_type": m.GameType,
+				"code":      m.ChallengeCode,
+				"players":   len(m.Players),
+				"needs":     m.Engine.MaxPlayers() - len(m.Players),
+			})
+		}
+		m.mu.Unlock()
+	}
+	return open
 }
 
 func (mm *MatchManager) CreateMatch(gameType, playerID string, options map[string]any) (*Match, error) {
@@ -264,11 +284,7 @@ func (mm *MatchManager) startGame(m *Match) {
 				"match_id": m.ID,
 			})
 			view := m.Engine.GetPlayerView(state, engines.PlayerID(pid))
-			c.SendJSON(map[string]any{
-				"type":     "your_turn",
-				"match_id": m.ID,
-				"state":    view,
-			})
+			mm.sendPlayerTurn(c, m.ID, view)
 		}
 	}
 
@@ -293,11 +309,15 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 
 	pid := engines.PlayerID(playerID)
 
+	log.Printf("HandleAction: match=%s player=%s action_type=%s data=%v", matchID, playerID, action.Type, action.Data)
+
 	if err := m.Engine.ValidateAction(m.State, pid, action); err != nil {
 		if c := mm.hub.GetClientByPlayer(playerID); c != nil {
 			c.SendJSON(map[string]any{
-				"type":    "error",
-				"message": err.Error(),
+				"type":     "action_result",
+				"match_id": m.ID,
+				"success":  false,
+				"message":  err.Error(),
 			})
 		}
 		return err
@@ -321,7 +341,9 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 		c.SendJSON(map[string]any{
 			"type":     "action_result",
 			"match_id": m.ID,
-			"result":   result,
+			"success":  result.Success,
+			"message":  result.Message,
+			"data":     result.Data,
 		})
 	}
 
@@ -332,18 +354,25 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 				c.SendJSON(map[string]any{
 					"type":        "opponent_action",
 					"match_id":    m.ID,
-					"result":      result,
+					"action_type": action.Type,
+					"message":     result.Message,
+					"data":        result.Data,
 				})
 			}
 		}
 	}
 
 	// Broadcast to spectators
+	actionText := action.Type
+	if result.Message != "" {
+		actionText += " - " + result.Message
+	}
 	mm.hub.BroadcastToSpectators(m.ID, map[string]any{
 		"type":        "action",
 		"match_id":    m.ID,
 		"player":      playerID,
 		"action_type": action.Type,
+		"text":        actionText,
 		"result":      result,
 	})
 
@@ -359,11 +388,7 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 	for _, p := range m.Players {
 		if c := mm.hub.GetClientByPlayer(p); c != nil {
 			view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
-			c.SendJSON(map[string]any{
-				"type":     "your_turn",
-				"match_id": m.ID,
-				"state":    view,
-			})
+			mm.sendPlayerTurn(c, m.ID, view)
 		}
 	}
 
@@ -417,11 +442,7 @@ func (mm *MatchManager) startTurnTimer(m *Match) {
 		for _, p := range m.Players {
 			if c := mm.hub.GetClientByPlayer(p); c != nil {
 				view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
-				c.SendJSON(map[string]any{
-					"type":     "your_turn",
-					"match_id": m.ID,
-					"state":    view,
-				})
+				mm.sendPlayerTurn(c, m.ID, view)
 			}
 		}
 		mm.startTurnTimer(m)
@@ -460,7 +481,10 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 			c.SendJSON(map[string]any{
 				"type":     "game_over",
 				"match_id": m.ID,
-				"result":   result,
+				"winner":   string(result.Winner),
+				"draw":     result.Draw,
+				"scores":   result.Scores,
+				"reason":   result.Reason,
 			})
 		}
 	}
@@ -498,6 +522,20 @@ func (mm *MatchManager) updateELO(winnerID, loserID, gameType string, draw bool)
 	log.Printf("ELO updated: %s %d->%d, %s %d->%d", winnerID, wElo.Rating, wNew, loserID, lElo.Rating, lNew)
 }
 
+func (mm *MatchManager) sendPlayerTurn(c *Client, matchID string, view *engines.PlayerView) {
+	c.SendJSON(map[string]any{
+		"type":              "your_turn",
+		"match_id":          matchID,
+		"phase":             view.Phase,
+		"your_turn":         view.YourTurn,
+		"simultaneous":      view.Simultaneous,
+		"board":             view.Board,
+		"available_actions": view.AvailableActions,
+		"turn_number":       view.TurnNumber,
+		"game_specific":     view.GameSpecific,
+	})
+}
+
 func (mm *MatchManager) GetMatch(id string) *Match {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
@@ -507,31 +545,67 @@ func (mm *MatchManager) GetMatch(id string) *Match {
 func (mm *MatchManager) GetSpectatorView(m *Match) map[string]any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return mm.getSpectatorViewLocked(m)
+}
+
+// getSpectatorViewLocked requires caller to already hold m.mu
+func (mm *MatchManager) getSpectatorViewLocked(m *Match) map[string]any {
+	// Build player info with names from DB
+	playerInfos := make([]map[string]any, len(m.Players))
+	for i, pid := range m.Players {
+		name := pid
+		if p, err := mm.db.GetPlayer(pid); err == nil && p.Name != "" {
+			name = p.Name
+		}
+		elo := 1200
+		if e, err := mm.db.GetOrCreateELO(pid, m.GameType); err == nil {
+			elo = e.Rating
+		}
+		playerInfos[i] = map[string]any{
+			"id":   pid,
+			"name": name,
+			"elo":  elo,
+		}
+	}
+
 	if m.State == nil {
 		return map[string]any{
 			"match_id":  m.ID,
 			"game_type": m.GameType,
 			"status":    string(m.Status),
-			"players":   m.Players,
+			"players":   playerInfos,
 		}
 	}
+
 	views := make(map[string]any)
 	for _, p := range m.Players {
 		views[p] = m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
 	}
+
+	// Determine current turn as player index (1 or 2)
+	currentTurnIdx := 0
+	for i, p := range m.Players {
+		if p == string(m.State.CurrentTurn) {
+			currentTurnIdx = i + 1
+			break
+		}
+	}
+
 	return map[string]any{
 		"match_id":     m.ID,
 		"game_type":    m.GameType,
 		"status":       string(m.Status),
-		"players":      m.Players,
+		"players":      playerInfos,
 		"player_views": views,
+		"game_state":   views,
 		"turn_number":  m.State.TurnNumber,
-		"current_turn": string(m.State.CurrentTurn),
+		"current_turn": currentTurnIdx,
 	}
 }
 
 func (mm *MatchManager) broadcastSpectatorState(m *Match) {
-	view := mm.GetSpectatorView(m)
+	// NOTE: caller must already hold m.mu - use getSpectatorViewLocked
+	view := mm.getSpectatorViewLocked(m)
 	view["type"] = "match_state"
 	mm.hub.BroadcastToSpectators(m.ID, view)
 }
@@ -602,19 +676,30 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 
 	if m.State == nil {
 		return map[string]any{
-			"type":     "your_turn",
+			"type":     "game_state",
 			"match_id": m.ID,
-			"state": map[string]any{
-				"phase": string(m.Status),
-			},
+			"phase":    string(m.Status),
 		}, nil
 	}
 
+	if !slices.Contains(m.Players, playerID) {
+		return nil, fmt.Errorf("you are not a player in this match")
+	}
+
 	view := m.Engine.GetPlayerView(m.State, engines.PlayerID(playerID))
+	if view == nil {
+		return nil, fmt.Errorf("could not get player view")
+	}
 	return map[string]any{
-		"type":     "your_turn",
-		"match_id": m.ID,
-		"state":    view,
+		"type":              "game_state",
+		"match_id":          m.ID,
+		"phase":             view.Phase,
+		"your_turn":         view.YourTurn,
+		"simultaneous":      view.Simultaneous,
+		"board":             view.Board,
+		"available_actions": view.AvailableActions,
+		"turn_number":       view.TurnNumber,
+		"game_specific":     view.GameSpecific,
 	}, nil
 }
 

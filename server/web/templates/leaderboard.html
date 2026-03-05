@@ -1,0 +1,18 @@
+{{define "leaderboard.html"}}
+<h2>Leaderboard - {{.GameType}}</h2>
+{{if .Leaderboard}}
+<table>
+    <tr><th>#</th><th>Player</th><th>Rating</th><th>Games</th></tr>
+    {{range $i, $e := .Leaderboard}}
+    <tr>
+        <td>{{$i}}</td>
+        <td><a href="/player/{{$e.PlayerID}}">{{$e.PlayerName}}</a></td>
+        <td>{{$e.Rating}}</td>
+        <td>{{$e.GamesPlayed}}</td>
+    </tr>
+    {{end}}
+</table>
+{{else}}
+<p>No ratings yet.</p>
+{{end}}
+{{end}}
