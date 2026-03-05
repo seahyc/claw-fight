@@ -302,6 +302,7 @@ type WSMessage struct {
 	Message    string          `json:"message,omitempty"`
 	Scope      string          `json:"scope,omitempty"`
 	Types      []string        `json:"types,omitempty"`
+	Timeout    int             `json:"timeout,omitempty"` // listen timeout in seconds
 }
 
 func (s *Server) handleClientMessage(client *Client, raw []byte) {
@@ -649,24 +650,42 @@ func (s *Server) handleListen(client *Client, msg WSMessage) {
 		return
 	}
 
-	events := client.DrainEvents(msg.MatchID, msg.Types)
-	if len(events) == 0 {
-		// Block waiting for events, 5 min timeout
-		select {
-		case <-client.eventCh:
-		case <-time.After(5 * time.Minute):
+	// Cancel any previous listen
+	client.mu.Lock()
+	if client.listenCancel != nil {
+		close(client.listenCancel)
+	}
+	cancel := make(chan struct{})
+	client.listenCancel = cancel
+	client.mu.Unlock()
+
+	// Run in goroutine so ReadPump isn't blocked
+	go func() {
+		timeout := 5 * time.Minute
+		if msg.Timeout > 0 && msg.Timeout <= 300 {
+			timeout = time.Duration(msg.Timeout) * time.Second
 		}
-		events = client.DrainEvents(msg.MatchID, msg.Types)
-	}
 
-	if len(events) == 0 {
-		events = []map[string]any{}
-	}
+		events := client.DrainEvents(msg.MatchID, msg.Types)
+		if len(events) == 0 {
+			select {
+			case <-client.eventCh:
+			case <-time.After(timeout):
+			case <-cancel:
+				return
+			}
+			events = client.DrainEvents(msg.MatchID, msg.Types)
+		}
 
-	client.SendJSON(map[string]any{
-		"type":   "events",
-		"events": events,
-	})
+		if len(events) == 0 {
+			events = []map[string]any{}
+		}
+
+		client.SendJSON(map[string]any{
+			"type":   "events",
+			"events": events,
+		})
+	}()
 }
 
 func (s *Server) handleChat(client *Client, msg WSMessage) {

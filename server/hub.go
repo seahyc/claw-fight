@@ -25,9 +25,10 @@ type Client struct {
 	mu       sync.Mutex
 
 	// Event queue
-	events  []map[string]any
-	eventCh chan struct{}
-	eventMu sync.Mutex
+	events      []map[string]any
+	eventCh     chan struct{}
+	eventMu     sync.Mutex
+	listenCancel chan struct{} // cancel active listen
 }
 
 type Hub struct {

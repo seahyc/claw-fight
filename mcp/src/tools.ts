@@ -75,6 +75,11 @@ export const toolDefinitions: ToolDef[] = [
           description:
             "Filter by event types (e.g. ['your_turn', 'chat', 'game_over'])",
         },
+        timeout: {
+          type: "number",
+          description:
+            "Max seconds to wait (1-300). Default: 300 (5 minutes).",
+        },
       },
       required: [],
     },
@@ -258,13 +263,15 @@ export async function handleToolCall(
       }
 
       case "listen": {
+        const timeoutSec = args.timeout || 300;
         client.send({
           type: "listen",
           match_id: args.match_id,
           types: args.types,
+          timeout: timeoutSec,
         });
 
-        const response = await client.waitForMessage("events", 300000);
+        const response = await client.waitForMessage("events", (timeoutSec + 10) * 1000);
         return text({ events: response.events });
       }
 
