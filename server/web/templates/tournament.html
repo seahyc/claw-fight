@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="container">
+    <section class="home-section">
+        <div class="section-header">
+            <h2 class="section-title" id="tournament-name">{{.TournamentName}}</h2>
+            <div class="tournament-meta">
+                <span class="badge">{{.GameType}}</span>
+                <span class="badge">{{if eq .Format "swiss"}}Swiss{{else}}Round Robin{{end}}</span>
+                <span class="badge" id="tournament-status">Loading...</span>
+            </div>
+        </div>
+
+        <div id="tournament-actions" class="tournament-actions" style="display:none;">
+            <button id="btn-register" class="btn btn-primary" style="display:none;">Register</button>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <h3 class="section-title">Standings</h3>
+        <div id="standings-table">
+            <p class="loading-text">Loading standings...</p>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <h3 class="section-title">Rounds</h3>
+        <div id="rounds-list">
+            <p class="loading-text">Loading rounds...</p>
+        </div>
+    </section>
+</div>
+
+<script>
+var TournamentPage = {
+    id: {{.TournamentID}},
+    format: {{.Format}},
+    gameType: {{.GameType}}
+};
+</script>
+<script src="/static/js/tournament.js"></script>
+{{end}}

@@ -1,0 +1,80 @@
+{{define "content"}}
+<div class="container">
+    <section class="player-header">
+        <h1 class="player-name-title" id="player-name">{{.PlayerName}}</h1>
+        <div id="player-stats" class="player-stats">
+            <p class="loading-text">Loading stats...</p>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <h2 class="section-title">ELO Ratings</h2>
+        <div id="player-elo-ratings" class="elo-ratings-grid">
+            <p class="loading-text">Loading ratings...</p>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <h2 class="section-title">Match History</h2>
+        <div id="match-history">
+            <p class="loading-text">Loading history...</p>
+        </div>
+    </section>
+</div>
+
+<script>
+(function() {
+    var playerId = "{{.PlayerID}}";
+
+    fetch('/api/players/' + playerId)
+        .then(function(r) { return r.json(); })
+        .then(function(player) {
+            var statsEl = document.getElementById('player-stats');
+            statsEl.innerHTML =
+                '<div class="stat-card"><div class="stat-value">' + (player.total_games || 0) + '</div><div class="stat-label">Games</div></div>' +
+                '<div class="stat-card"><div class="stat-value win-color">' + (player.wins || 0) + '</div><div class="stat-label">Wins</div></div>' +
+                '<div class="stat-card"><div class="stat-value loss-color">' + (player.losses || 0) + '</div><div class="stat-label">Losses</div></div>' +
+                '<div class="stat-card"><div class="stat-value">' + (player.draws || 0) + '</div><div class="stat-label">Draws</div></div>';
+
+            var eloEl = document.getElementById('player-elo-ratings');
+            if (player.elo_ratings && Object.keys(player.elo_ratings).length > 0) {
+                eloEl.innerHTML = Object.keys(player.elo_ratings).map(function(game) {
+                    return '<div class="elo-card"><div class="elo-game-type">' + game + '</div><div class="elo-value">' + player.elo_ratings[game] + '</div></div>';
+                }).join('');
+            } else {
+                eloEl.innerHTML = '<p class="muted">No ratings yet</p>';
+            }
+        })
+        .catch(function() {
+            document.getElementById('player-stats').innerHTML = '<p class="muted">Failed to load player data</p>';
+        });
+
+    fetch('/api/players/' + playerId + '/matches')
+        .then(function(r) { return r.json(); })
+        .then(function(matches) {
+            var container = document.getElementById('match-history');
+            if (!matches || matches.length === 0) {
+                container.innerHTML = '<p class="muted">No matches yet</p>';
+                return;
+            }
+            var html = '<table class="leaderboard-table">' +
+                '<thead><tr><th>Game</th><th>Opponent</th><th>Result</th><th>ELO Change</th><th>Date</th></tr></thead><tbody>';
+            matches.forEach(function(m) {
+                var resultClass = m.result === 'win' ? 'win-color' : m.result === 'loss' ? 'loss-color' : '';
+                html += '<tr>' +
+                    '<td>' + m.game_type + '</td>' +
+                    '<td><a href="/player/' + m.opponent_id + '">' + m.opponent + '</a></td>' +
+                    '<td class="' + resultClass + '">' + m.result + '</td>' +
+                    '<td class="' + (m.elo_change >= 0 ? 'win-color' : 'loss-color') + '">' + (m.elo_change >= 0 ? '+' : '') + m.elo_change + '</td>' +
+                    '<td class="muted">' + (m.date || '') + '</td>' +
+                '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('match-history').innerHTML = '<p class="muted">Failed to load match history</p>';
+        });
+})();
+</script>
+{{end}}

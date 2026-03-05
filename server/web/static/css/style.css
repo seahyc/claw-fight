@@ -1,0 +1,1549 @@
+/* ========================================
+   claw.fight - 8-bit Retro Pixel Platformer UI
+   Inspired by Game Boy Advance side-scrollers
+   ======================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap');
+
+:root {
+    /* Sky palette */
+    --sky-top: #5b8cc8;
+    --sky-mid: #7eb4d2;
+    --sky-bot: #a8d8ea;
+
+    /* Ground palette */
+    --grass-light: #6abf4b;
+    --grass-dark: #3d8b37;
+    --dirt: #8b6f47;
+    --dirt-dark: #6b5234;
+
+    /* Mountain palette */
+    --mountain-far: #7a8ba8;
+    --mountain-mid: #6b7d99;
+    --mountain-near: #5a6d88;
+    --mountain-snow: #d4dce8;
+
+    /* UI palette */
+    --panel-bg: #2a2157;
+    --panel-border: #4a3d8f;
+    --panel-light: #3d3478;
+    --panel-dark: #1a1440;
+    --btn-purple: #6b3fa0;
+    --btn-purple-light: #8b5fc0;
+    --btn-purple-dark: #4b2f70;
+
+    /* Accent colors */
+    --gold: #ffd700;
+    --gold-dim: #c8a600;
+    --red: #e84040;
+    --red-dim: #c03030;
+    --green: #4ade80;
+    --cyan: #67e8f9;
+    --white: #f0f0f0;
+    --text: #f0f0f0;
+    --text-muted: #a0a0c0;
+    --text-shadow: #1a1440;
+
+    /* Pixel sizing */
+    --pixel: 4px;
+    --border-w: 3px;
+    --radius: 0px; /* no border radius - pixel perfect */
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+    image-rendering: pixelated;
+}
+
+body {
+    font-family: 'Silkscreen', 'Press Start 2P', monospace;
+    background: var(--sky-top);
+    color: var(--text);
+    line-height: 1.8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Parallax sky background */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background: linear-gradient(
+        180deg,
+        var(--sky-top) 0%,
+        var(--sky-mid) 40%,
+        var(--sky-bot) 70%,
+        var(--grass-light) 70.1%,
+        var(--grass-dark) 75%,
+        var(--dirt) 85%,
+        var(--dirt-dark) 100%
+    );
+}
+
+/* Pixel cloud layer */
+body::after {
+    content: '';
+    position: fixed;
+    top: 5%;
+    left: 0;
+    right: 0;
+    height: 200px;
+    z-index: -1;
+    background-image:
+        /* Cloud 1 */
+        radial-gradient(ellipse 80px 30px at 15% 30%, rgba(255,255,255,0.7) 50%, transparent 51%),
+        radial-gradient(ellipse 50px 25px at 12% 35%, rgba(255,255,255,0.7) 50%, transparent 51%),
+        radial-gradient(ellipse 50px 25px at 18% 35%, rgba(255,255,255,0.7) 50%, transparent 51%),
+        /* Cloud 2 */
+        radial-gradient(ellipse 100px 35px at 55% 20%, rgba(255,255,255,0.6) 50%, transparent 51%),
+        radial-gradient(ellipse 60px 30px at 51% 25%, rgba(255,255,255,0.6) 50%, transparent 51%),
+        radial-gradient(ellipse 60px 30px at 59% 25%, rgba(255,255,255,0.6) 50%, transparent 51%),
+        /* Cloud 3 */
+        radial-gradient(ellipse 70px 28px at 85% 50%, rgba(255,255,255,0.5) 50%, transparent 51%),
+        radial-gradient(ellipse 45px 22px at 82% 55%, rgba(255,255,255,0.5) 50%, transparent 51%),
+        radial-gradient(ellipse 45px 22px at 88% 55%, rgba(255,255,255,0.5) 50%, transparent 51%);
+    animation: clouds-drift 60s linear infinite;
+}
+
+@keyframes clouds-drift {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100px); }
+}
+
+a {
+    color: var(--gold);
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+a:hover {
+    color: var(--cyan);
+    text-shadow: 0 0 8px rgba(103, 232, 249, 0.5);
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    width: 100%;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--text-muted); }
+.win-color { color: var(--green); }
+.loss-color { color: var(--red); }
+
+/* ========================================
+   Pixel Panel (reusable component)
+   ======================================== */
+
+.pixel-panel {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        4px 4px 0 rgba(0,0,0,0.3);
+    padding: 1.5rem;
+    position: relative;
+}
+
+/* ========================================
+   Navigation
+   ======================================== */
+
+.navbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--panel-dark);
+    border-bottom: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset 0 calc(var(--border-w) * -1) 0 var(--panel-bg),
+        0 4px 0 rgba(0,0,0,0.3);
+}
+
+.nav-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+}
+
+.nav-logo {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.1rem;
+    color: var(--gold);
+    letter-spacing: 1px;
+    text-shadow:
+        2px 2px 0 var(--text-shadow),
+        -1px -1px 0 var(--gold-dim);
+    transition: all 0.15s;
+}
+
+.nav-logo:hover {
+    color: var(--cyan);
+    text-shadow:
+        2px 2px 0 var(--text-shadow),
+        0 0 12px rgba(103, 232, 249, 0.6);
+}
+
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.nav-link {
+    font-family: 'Press Start 2P', monospace;
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    transition: color 0.15s;
+    padding: 0.4rem 0.8rem;
+    border: 2px solid transparent;
+}
+
+.nav-link:hover {
+    color: var(--white);
+    border-color: var(--panel-border);
+    background: var(--panel-bg);
+}
+
+/* ========================================
+   Hero Section - Pixel Mountain Scene
+   ======================================== */
+
+.hero {
+    position: relative;
+    padding: 5rem 0 4rem;
+    text-align: center;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 60%, var(--sky-bot) 100%);
+}
+
+/* Mountain silhouettes */
+.hero-bg {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    background:
+        /* Near mountains (dark) */
+        linear-gradient(135deg, transparent 33%, var(--mountain-near) 33%, var(--mountain-near) 40%, transparent 40%) -100px bottom / 300px 180px no-repeat,
+        linear-gradient(150deg, transparent 30%, var(--mountain-near) 30%, var(--mountain-near) 45%, transparent 45%) 100px bottom / 350px 200px no-repeat,
+        linear-gradient(140deg, transparent 35%, var(--mountain-near) 35%, var(--mountain-near) 42%, transparent 42%) 500px bottom / 280px 170px no-repeat,
+        linear-gradient(155deg, transparent 28%, var(--mountain-near) 28%, var(--mountain-near) 43%, transparent 43%) 800px bottom / 320px 190px no-repeat,
+        /* Mid mountains */
+        linear-gradient(140deg, transparent 30%, var(--mountain-mid) 30%, var(--mountain-mid) 42%, transparent 42%) 0px bottom / 400px 220px no-repeat,
+        linear-gradient(145deg, transparent 32%, var(--mountain-mid) 32%, var(--mountain-mid) 40%, transparent 40%) 350px bottom / 380px 240px no-repeat,
+        linear-gradient(135deg, transparent 35%, var(--mountain-mid) 35%, var(--mountain-mid) 44%, transparent 44%) 700px bottom / 360px 210px no-repeat,
+        /* Far mountains (lighter) */
+        linear-gradient(145deg, transparent 28%, var(--mountain-far) 28%, var(--mountain-far) 40%, transparent 40%) 50px bottom / 500px 260px no-repeat,
+        linear-gradient(140deg, transparent 30%, var(--mountain-far) 30%, var(--mountain-far) 42%, transparent 42%) 450px bottom / 480px 250px no-repeat;
+}
+
+/* Ground strip at bottom of hero */
+.hero::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background:
+        repeating-linear-gradient(
+            90deg,
+            var(--grass-light) 0px,
+            var(--grass-light) 20px,
+            var(--grass-dark) 20px,
+            var(--grass-dark) 40px
+        );
+    border-top: 4px solid var(--grass-dark);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 3rem;
+    color: var(--white);
+    letter-spacing: 3px;
+    text-shadow:
+        3px 3px 0 var(--panel-dark),
+        6px 6px 0 rgba(0,0,0,0.2),
+        0 0 30px rgba(255,215,0,0.3);
+    margin-bottom: 1rem;
+    animation: title-bounce 3s ease-in-out infinite;
+}
+
+@keyframes title-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+.hero-tagline {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.85rem;
+    color: var(--sky-bot);
+    text-shadow: 1px 1px 0 var(--panel-dark);
+    letter-spacing: 1px;
+}
+
+/* ========================================
+   Quick Start / Steps
+   ======================================== */
+
+.quick-start {
+    padding: 2.5rem 0;
+}
+
+.section-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.9rem;
+    color: var(--gold);
+    margin-bottom: 1.5rem;
+    text-shadow: 2px 2px 0 var(--text-shadow);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.section-title::before {
+    content: '> ';
+    color: var(--cyan);
+}
+
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.25rem;
+}
+
+.step-card {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        4px 4px 0 rgba(0,0,0,0.3);
+    padding: 1.5rem 1.25rem;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.step-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        6px 6px 0 rgba(0,0,0,0.4);
+}
+
+.step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--btn-purple);
+    color: var(--white);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    border: 2px solid var(--btn-purple-light);
+    box-shadow: inset -2px -2px 0 var(--btn-purple-dark);
+    margin-bottom: 0.75rem;
+}
+
+.step-card h3 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    margin-bottom: 0.5rem;
+    color: var(--white);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+.step-card p {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.6;
+}
+
+/* ========================================
+   Home Sections
+   ======================================== */
+
+.home-section {
+    padding: 1.5rem 0;
+}
+
+.loading-text {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-family: 'Press Start 2P', monospace;
+}
+
+.loading-text::after {
+    content: '';
+    animation: pixel-dots 1.5s steps(3) infinite;
+}
+
+@keyframes pixel-dots {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+}
+
+/* ========================================
+   Match Cards
+   ======================================== */
+
+.matches-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+}
+
+.match-card {
+    display: block;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        3px 3px 0 rgba(0,0,0,0.3);
+    padding: 1rem;
+    transition: transform 0.1s, box-shadow 0.1s;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.match-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        5px 5px 0 rgba(0,0,0,0.4);
+    color: var(--white);
+    border-color: var(--gold-dim);
+}
+
+.match-card-type {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    margin-bottom: 0.75rem;
+}
+
+.match-card-players {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+}
+
+.vs {
+    color: var(--red);
+    font-size: 0.55rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.match-card-status,
+.match-card-result {
+    margin-top: 0.75rem;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-align: center;
+    font-family: 'Press Start 2P', monospace;
+}
+
+.player-name.winner {
+    color: var(--gold);
+    text-shadow: 0 0 6px rgba(255,215,0,0.5);
+}
+
+/* ========================================
+   Leaderboard Table
+   ======================================== */
+
+.leaderboard-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        4px 4px 0 rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.leaderboard-table thead {
+    background: var(--panel-dark);
+}
+
+.leaderboard-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gold);
+    border-bottom: 2px solid var(--panel-border);
+}
+
+.leaderboard-table td {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--panel-border);
+    font-size: 0.75rem;
+}
+
+.leaderboard-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.leaderboard-table tbody tr:hover {
+    background: var(--panel-light);
+}
+
+.leaderboard-table .rank {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    color: var(--gold);
+    width: 50px;
+}
+
+.leaderboard-table .elo {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--cyan);
+}
+
+/* ========================================
+   Leaderboard Page (tabs)
+   ======================================== */
+
+.leaderboard-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.leaderboard-tab {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    padding: 0.5rem 1rem;
+    border: 2px solid var(--panel-border);
+    background: var(--panel-bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.1s;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+}
+
+.leaderboard-tab:hover {
+    border-color: var(--gold-dim);
+    color: var(--white);
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+}
+
+.leaderboard-tab.active {
+    background: var(--btn-purple);
+    border-color: var(--btn-purple-light);
+    color: var(--white);
+    box-shadow:
+        inset -2px -2px 0 var(--btn-purple-dark),
+        2px 2px 0 rgba(0,0,0,0.3);
+}
+
+/* ========================================
+   Match Page Layout
+   ======================================== */
+
+.match-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+    overflow: hidden;
+    background: var(--panel-dark);
+}
+
+.player-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    background: var(--panel-bg);
+    border-bottom: var(--border-w) solid var(--panel-border);
+    box-shadow: inset 0 calc(var(--border-w) * -1) 0 var(--panel-dark);
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.player-bar-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+    color: var(--white);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+.player-bar-elo {
+    color: var(--text-muted);
+    font-size: 0.6rem;
+}
+
+.vs-badge {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    color: var(--red);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+    animation: vs-pulse 2s ease-in-out infinite;
+}
+
+@keyframes vs-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+
+.turn-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    transition: background 0.2s;
+}
+
+.turn-indicator.active {
+    background: var(--green);
+    border-color: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pixel-blink 1s steps(1) infinite;
+}
+
+@keyframes pixel-blink {
+    0%, 70% { opacity: 1; }
+    71%, 100% { opacity: 0.3; }
+}
+
+.match-body {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.board-area {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    overflow: auto;
+    background:
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 30px,
+            rgba(255,255,255,0.02) 30px,
+            rgba(255,255,255,0.02) 31px
+        ),
+        repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 30px,
+            rgba(255,255,255,0.02) 30px,
+            rgba(255,255,255,0.02) 31px
+        );
+}
+
+.game-board {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.action-log-sidebar {
+    background: var(--panel-bg);
+    border-left: var(--border-w) solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: inset var(--border-w) 0 0 var(--panel-light);
+}
+
+.sidebar-title {
+    padding: 0.75rem 1rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gold);
+    border-bottom: 2px solid var(--panel-border);
+}
+
+.sidebar-title::before {
+    content: '[ ';
+    color: var(--panel-border);
+}
+
+.sidebar-title::after {
+    content: ' ]';
+    color: var(--panel-border);
+}
+
+.action-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.7rem;
+}
+
+.action-log-entry {
+    padding: 0.35rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    line-height: 1.5;
+}
+
+.action-log-entry:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.action-log-time {
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    margin-right: 0.5rem;
+}
+
+.action-log-player {
+    font-weight: 700;
+    margin-right: 0.25rem;
+}
+
+.action-log-player.p1 { color: var(--cyan); }
+.action-log-player.p2 { color: var(--red); }
+
+.action-log-text {
+    color: var(--text-muted);
+}
+
+.status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 1.25rem;
+    background: var(--panel-dark);
+    border-top: var(--border-w) solid var(--panel-border);
+    font-size: 0.6rem;
+    font-family: 'Press Start 2P', monospace;
+}
+
+.match-status {
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--green);
+}
+
+.match-timer {
+    font-variant-numeric: tabular-nums;
+    color: var(--white);
+}
+
+.match-timer.urgent {
+    color: var(--red);
+    animation: pixel-blink 0.5s steps(1) infinite;
+}
+
+.turn-text {
+    color: var(--text-muted);
+    font-size: 0.5rem;
+}
+
+/* ========================================
+   Game Over Overlay
+   ======================================== */
+
+.game-over-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.game-over-content {
+    background: var(--panel-bg);
+    border: 4px solid var(--gold);
+    box-shadow:
+        inset -3px -3px 0 var(--panel-dark),
+        inset 3px 3px 0 var(--panel-light),
+        0 0 40px rgba(255,215,0,0.3),
+        8px 8px 0 rgba(0,0,0,0.5);
+    padding: 2.5rem 3rem;
+    text-align: center;
+    max-width: 420px;
+}
+
+.game-over-content h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--text-shadow);
+    animation: title-bounce 2s ease-in-out infinite;
+}
+
+.game-over-result {
+    font-size: 0.75rem;
+    margin-bottom: 2rem;
+    color: var(--text-muted);
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1.5rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    cursor: pointer;
+    transition: all 0.1s;
+    border: 2px solid;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-primary {
+    background: var(--btn-purple);
+    border-color: var(--btn-purple-light);
+    box-shadow:
+        inset -2px -2px 0 var(--btn-purple-dark),
+        3px 3px 0 rgba(0,0,0,0.3);
+    color: var(--white);
+}
+
+.btn-primary:hover {
+    transform: translate(-1px, -1px);
+    box-shadow:
+        inset -2px -2px 0 var(--btn-purple-dark),
+        4px 4px 0 rgba(0,0,0,0.4);
+    color: var(--white);
+}
+
+.btn-primary:active {
+    transform: translate(2px, 2px);
+    box-shadow:
+        inset 2px 2px 0 var(--btn-purple-dark);
+}
+
+.btn-secondary {
+    background: var(--panel-bg);
+    border-color: var(--panel-border);
+    box-shadow:
+        inset -2px -2px 0 var(--panel-dark),
+        3px 3px 0 rgba(0,0,0,0.3);
+    color: var(--text);
+}
+
+.btn-secondary:hover {
+    border-color: var(--gold-dim);
+    color: var(--gold);
+    transform: translate(-1px, -1px);
+}
+
+/* ========================================
+   Player Page
+   ======================================== */
+
+.player-header {
+    padding: 2.5rem 0 1rem;
+}
+
+.player-name-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.2rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--text-shadow);
+    margin-bottom: 1.5rem;
+}
+
+.player-stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.stat-card {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        3px 3px 0 rgba(0,0,0,0.3);
+    padding: 1rem 1.25rem;
+    text-align: center;
+    min-width: 100px;
+}
+
+.stat-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.2rem;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+    color: var(--cyan);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+.stat-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.elo-ratings-grid {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.elo-card {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        3px 3px 0 rgba(0,0,0,0.3);
+    padding: 1rem 1.25rem;
+    text-align: center;
+    min-width: 130px;
+}
+
+.elo-game-type {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    margin-bottom: 0.5rem;
+}
+
+.elo-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.2rem;
+    color: var(--gold);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+/* ========================================
+   Battleship Board - Pixel Water Grid
+   ======================================== */
+
+.battleship-board {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.battleship-board-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+.battleship-grid {
+    display: grid;
+    grid-template-columns: 24px repeat(10, 34px);
+    grid-template-rows: 24px repeat(10, 34px);
+    gap: 1px;
+    background: var(--panel-border);
+    border: 3px solid var(--panel-border);
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.battleship-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    color: var(--text-muted);
+    background: var(--panel-dark);
+}
+
+.battleship-cell {
+    width: 34px;
+    height: 34px;
+    cursor: default;
+    transition: all 0.1s;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+}
+
+.battleship-cell.water {
+    background: linear-gradient(135deg, #1a5276 0%, #1e6091 50%, #1a5276 100%);
+}
+
+.battleship-cell.water:hover {
+    background: #2471a3;
+}
+
+.battleship-cell.ship {
+    background: var(--mountain-mid);
+    box-shadow: inset -2px -2px 0 var(--mountain-near);
+}
+
+.battleship-cell.hit {
+    background: var(--red);
+    animation: pixel-hit 0.3s steps(3);
+}
+
+.battleship-cell.hit::after {
+    content: 'X';
+    color: var(--white);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.battleship-cell.miss {
+    background: #1a5276;
+}
+
+.battleship-cell.miss::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.battleship-cell.sunk {
+    background: #8b0000;
+    box-shadow: inset -2px -2px 0 #660000;
+    animation: pixel-shake 0.4s steps(4);
+}
+
+.battleship-cell.sunk::after {
+    content: 'X';
+    color: var(--gold);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+}
+
+.battleship-cell.last-action {
+    outline: 2px solid var(--gold);
+    outline-offset: -2px;
+    animation: pixel-blink 1s steps(1) infinite;
+}
+
+/* ========================================
+   Poker Table - Pixel Felt
+   ======================================== */
+
+.poker-table {
+    background: #1a4a2a;
+    border: 4px solid #3d2810;
+    box-shadow:
+        inset 4px 4px 0 #2a6a3a,
+        inset -4px -4px 0 #0a3a1a,
+        6px 6px 0 rgba(0,0,0,0.4);
+    padding: 2.5rem 3rem;
+    min-width: 480px;
+    position: relative;
+}
+
+.poker-community {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+.poker-pot {
+    text-align: center;
+    margin-bottom: 1.25rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+}
+
+.poker-pot-amount {
+    color: var(--gold);
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.poker-players-area {
+    display: flex;
+    justify-content: space-between;
+}
+
+.poker-player {
+    text-align: center;
+}
+
+.poker-player-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--white);
+}
+
+.poker-player-chips {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    color: var(--gold);
+    margin-bottom: 0.25rem;
+}
+
+.poker-player-bet {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.poker-player-action {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--red);
+    margin-top: 0.5rem;
+}
+
+.poker-hand {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: center;
+}
+
+.poker-card {
+    width: 44px;
+    height: 62px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    border: 2px solid;
+}
+
+.poker-card.face-up {
+    background: #f5f0e0;
+    color: #222;
+    border-color: #c0b090;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+}
+
+.poker-card.face-up.red {
+    color: #cc0000;
+}
+
+.poker-card.face-down {
+    background: var(--btn-purple);
+    border-color: var(--btn-purple-light);
+    box-shadow:
+        inset -2px -2px 0 var(--btn-purple-dark),
+        2px 2px 0 rgba(0,0,0,0.3);
+    color: transparent;
+}
+
+.poker-card.face-down::after {
+    content: '?';
+    font-family: 'Press Start 2P', monospace;
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 1rem;
+}
+
+.poker-card.empty {
+    background: rgba(255, 255, 255, 0.05);
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.2);
+}
+
+.poker-card-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+}
+
+.poker-card-suit {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+/* ========================================
+   Prisoner's Dilemma
+   ======================================== */
+
+.prisoners-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    align-items: center;
+    min-width: 560px;
+}
+
+.prisoners-round-info {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.prisoners-round-info strong {
+    color: var(--gold);
+}
+
+.prisoners-scores {
+    display: flex;
+    gap: 3rem;
+    justify-content: center;
+}
+
+.prisoners-player-score {
+    text-align: center;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light);
+    padding: 1rem 1.5rem;
+}
+
+.prisoners-player-score .score-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.prisoners-player-score .score-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.2rem;
+    color: var(--gold);
+    text-shadow: 1px 1px 0 var(--text-shadow);
+}
+
+.prisoners-player-score .coop-rate {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.prisoners-chart-container {
+    width: 100%;
+    max-width: 540px;
+    height: 180px;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light);
+    padding: 0.75rem;
+}
+
+.prisoners-chart-container canvas {
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+}
+
+.prisoners-history {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+    gap: 3px;
+    width: 100%;
+    max-width: 540px;
+}
+
+.prisoners-move {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    border: 1px solid;
+}
+
+.prisoners-move.cooperate {
+    background: #1a5276;
+    border-color: #2471a3;
+    color: var(--cyan);
+}
+
+.prisoners-move.defect {
+    background: #5a1a1a;
+    border-color: #8b3030;
+    color: var(--red);
+}
+
+.prisoners-moves-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+    text-align: center;
+    width: 100%;
+}
+
+/* ========================================
+   Animations
+   ======================================== */
+
+@keyframes pixel-hit {
+    0% { background: var(--white); transform: scale(1.1); }
+    50% { background: var(--gold); }
+    100% { background: var(--red); transform: scale(1); }
+}
+
+@keyframes pixel-shake {
+    0% { transform: translateX(-3px); }
+    25% { transform: translateX(3px); }
+    50% { transform: translateX(-2px); }
+    75% { transform: translateX(2px); }
+    100% { transform: translateX(0); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@keyframes pulse-border {
+    0%, 100% { outline-color: var(--gold); }
+    50% { outline-color: transparent; }
+}
+
+/* ========================================
+   Footer
+   ======================================== */
+
+.footer {
+    padding: 1.5rem 0;
+    text-align: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    color: var(--text-muted);
+    border-top: var(--border-w) solid var(--panel-border);
+    background: var(--panel-dark);
+    margin-top: auto;
+    letter-spacing: 0.5px;
+}
+
+/* ========================================
+   Scrollbar - Pixel Style
+   ======================================== */
+
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--panel-dark);
+    border-left: 2px solid var(--panel-border);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--panel-border);
+    border: 1px solid var(--panel-light);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--btn-purple);
+}
+
+/* ========================================
+   Tournament Page
+   ======================================== */
+
+.tournament-card {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        3px 3px 0 rgba(0,0,0,0.3);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: transform 0.1s;
+}
+
+.tournament-card:hover {
+    transform: translate(-2px, -2px);
+}
+
+.tournament-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+    color: var(--gold);
+    margin-bottom: 0.5rem;
+}
+
+.tournament-info {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.tournament-status {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    text-transform: uppercase;
+    margin-top: 0.5rem;
+}
+
+.tournament-status.open { color: var(--green); }
+.tournament-status.active { color: var(--gold); }
+.tournament-status.finished { color: var(--text-muted); }
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 1024px) {
+    .match-body {
+        grid-template-columns: 1fr;
+    }
+
+    .action-log-sidebar {
+        border-left: none;
+        border-top: var(--border-w) solid var(--panel-border);
+        max-height: 180px;
+    }
+
+    .poker-table {
+        min-width: auto;
+        padding: 1.5rem;
+    }
+
+    .prisoners-container {
+        min-width: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 1.8rem;
+    }
+
+    .hero {
+        padding: 3.5rem 0 3rem;
+    }
+
+    .game-board {
+        flex-direction: column;
+    }
+
+    .battleship-grid {
+        grid-template-columns: 20px repeat(10, 26px);
+        grid-template-rows: 20px repeat(10, 26px);
+    }
+
+    .battleship-cell {
+        width: 26px;
+        height: 26px;
+        font-size: 0.5rem;
+    }
+
+    .player-bar {
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .player-bar-name {
+        font-size: 0.55rem;
+    }
+
+    .matches-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .player-stats {
+        flex-direction: column;
+    }
+
+    .poker-card {
+        width: 36px;
+        height: 52px;
+        font-size: 0.7rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 1.4rem;
+    }
+
+    .steps-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nav-links {
+        gap: 0.75rem;
+    }
+
+    .nav-link {
+        font-size: 0.5rem;
+        padding: 0.3rem 0.5rem;
+    }
+
+    .battleship-grid {
+        grid-template-columns: 16px repeat(10, 22px);
+        grid-template-rows: 16px repeat(10, 22px);
+    }
+
+    .battleship-cell {
+        width: 22px;
+        height: 22px;
+    }
+}

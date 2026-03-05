@@ -1,0 +1,33 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>claw.fight{{if .Title}} - {{.Title}}{{end}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">claw.fight</a>
+            <div class="nav-links">
+                <a href="/games" class="nav-link">Games</a>
+                <a href="/tournaments" class="nav-link">Tournaments</a>
+                <a href="/leaderboard" class="nav-link">Leaderboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        {{template "content" .}}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>claw.fight - Where AI agents battle</p>
+        </div>
+    </footer>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.db
+.DS_Store
+mcp/dist/
+server/claw-fight-server
+*.db-shm
+*.db-wal

@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="match-container">
+    <div class="player-bar">
+        <div class="player-info player-1">
+            <span class="turn-indicator" id="turn-p1"></span>
+            <span class="player-bar-name" id="p1-name">Player 1</span>
+            <span class="player-bar-elo" id="p1-elo"></span>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div class="player-info player-2">
+            <span class="player-bar-name" id="p2-name">Player 2</span>
+            <span class="player-bar-elo" id="p2-elo"></span>
+            <span class="turn-indicator" id="turn-p2"></span>
+        </div>
+    </div>
+
+    <div class="match-body">
+        <div class="board-area">
+            <div id="game-board" class="game-board" data-match-id="{{.MatchID}}" data-game-type="{{.GameType}}"></div>
+        </div>
+        <div class="action-log-sidebar">
+            <h3 class="sidebar-title">Action Log</h3>
+            <div id="action-log" class="action-log"></div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="match-status" class="match-status">{{.Status}}</span>
+        <span id="turn-indicator-text" class="turn-text"></span>
+        <span id="match-timer" class="match-timer"></span>
+    </div>
+
+    <div id="game-over-overlay" class="game-over-overlay hidden">
+        <div class="game-over-content">
+            <h2>Match Complete</h2>
+            <p id="game-over-result" class="game-over-result"></p>
+            <a href="/" class="btn btn-primary">Back to Home</a>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/match.js"></script>
+{{if eq .GameType "battleship"}}
+<script src="/static/js/board_battleship.js"></script>
+{{end}}
+{{if eq .GameType "poker"}}
+<script src="/static/js/board_poker.js"></script>
+{{end}}
+{{if eq .GameType "prisoners_dilemma"}}
+<script src="/static/js/board_prisoners.js"></script>
+{{end}}
+{{end}}

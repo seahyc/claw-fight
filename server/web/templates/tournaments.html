@@ -1,0 +1,78 @@
+{{define "content"}}
+<div class="container">
+    <section class="home-section">
+        <div class="section-header">
+            <h2 class="section-title">Tournaments</h2>
+        </div>
+
+        <div class="tab-bar" id="tournament-tabs">
+            <button class="tab-btn active" data-filter="all">All</button>
+            <button class="tab-btn" data-filter="open">Open</button>
+            <button class="tab-btn" data-filter="active">Active</button>
+            <button class="tab-btn" data-filter="finished">Finished</button>
+        </div>
+
+        <div id="tournaments-list" class="matches-grid">
+            <p class="loading-text">Loading tournaments...</p>
+        </div>
+    </section>
+</div>
+
+<script>
+(function() {
+    var allTournaments = [];
+    var currentFilter = 'all';
+
+    function renderTournaments(tournaments) {
+        var container = document.getElementById('tournaments-list');
+        var filtered = currentFilter === 'all'
+            ? tournaments
+            : tournaments.filter(function(t) { return t.status === currentFilter; });
+
+        if (!filtered || filtered.length === 0) {
+            container.innerHTML = '<p class="muted">No tournaments found</p>';
+            return;
+        }
+
+        container.innerHTML = filtered.map(function(t) {
+            var statusClass = '';
+            if (t.status === 'open') statusClass = 'status-open';
+            else if (t.status === 'active') statusClass = 'status-active';
+            else if (t.status === 'finished') statusClass = 'status-finished';
+
+            var formatLabel = t.format === 'swiss' ? 'Swiss' : 'Round Robin';
+
+            return '<a href="/tournament/' + t.id + '" class="match-card">' +
+                '<div class="match-card-type">' + (t.game_type || 'Unknown') + '</div>' +
+                '<div class="tournament-card-name">' + t.name + '</div>' +
+                '<div class="tournament-card-info">' +
+                    '<span class="badge">' + formatLabel + '</span>' +
+                    '<span class="badge ' + statusClass + '">' + t.status + '</span>' +
+                '</div>' +
+                '<div class="match-card-status">' + t.player_count + ' players</div>' +
+            '</a>';
+        }).join('');
+    }
+
+    fetch('/api/tournaments')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            allTournaments = data || [];
+            renderTournaments(allTournaments);
+        })
+        .catch(function() {
+            document.getElementById('tournaments-list').innerHTML =
+                '<p class="muted">Failed to load tournaments</p>';
+        });
+
+    document.getElementById('tournament-tabs').addEventListener('click', function(e) {
+        if (e.target.classList.contains('tab-btn')) {
+            document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+            e.target.classList.add('active');
+            currentFilter = e.target.dataset.filter;
+            renderTournaments(allTournaments);
+        }
+    });
+})();
+</script>
+{{end}}
