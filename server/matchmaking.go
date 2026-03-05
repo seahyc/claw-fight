@@ -165,7 +165,7 @@ func (m *Matchmaker) createMatchForPair(gameType, player1, player2 string) {
 				"type":          "match_found",
 				"match_id":      match.ID,
 				"game_type":     gameType,
-				"spectator_url": "/match/" + match.ID,
+				"spectator_url": spectatorURL(match.ID),
 				"message":       "Match found! Game will start shortly. Use wait_for_turn to get your first game state, then use perform_action to play.",
 			})
 		}

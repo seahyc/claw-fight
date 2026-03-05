@@ -29,10 +29,21 @@ type Server struct {
 	funcMap    template.FuncMap
 }
 
+var baseURL string
+
+func spectatorURL(matchID string) string {
+	return baseURL + "/match/" + matchID
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+	}
+
+	baseURL = os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:" + port
 	}
 
 	db, err := NewDB("./claw-fight.db")
@@ -362,7 +373,7 @@ func (s *Server) handleCreateMatch(client *Client, msg WSMessage) {
 		"type":          "match_created",
 		"match_id":      match.ID,
 		"code":          match.ChallengeCode,
-		"spectator_url": "/match/" + match.ID,
+		"spectator_url": spectatorURL(match.ID),
 	})
 }
 
@@ -383,7 +394,7 @@ func (s *Server) handleJoinMatch(client *Client, msg WSMessage) {
 	client.SendJSON(map[string]any{
 		"type":          "match_joined",
 		"match_id":      match.ID,
-		"spectator_url": "/match/" + match.ID,
+		"spectator_url": spectatorURL(match.ID),
 	})
 }
 
