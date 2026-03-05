@@ -362,18 +362,33 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 		}
 	}
 
-	// Broadcast to spectators
+	// Broadcast to spectators - resolve player name
+	playerName := playerID
+	if p, err := mm.db.GetPlayer(playerID); err == nil && p.Name != "" {
+		playerName = p.Name
+	}
 	actionText := action.Type
 	if result.Message != "" {
 		actionText += " - " + result.Message
 	}
+	spectatorState := mm.buildSpectatorGameState(m)
+	// Determine current turn index for spectator
+	currentTurnIdx := 0
+	for i, p := range m.Players {
+		if p == string(m.State.CurrentTurn) {
+			currentTurnIdx = i + 1
+			break
+		}
+	}
 	mm.hub.BroadcastToSpectators(m.ID, map[string]any{
-		"type":        "action",
-		"match_id":    m.ID,
-		"player":      playerID,
-		"action_type": action.Type,
-		"text":        actionText,
-		"result":      result,
+		"type":         "action",
+		"match_id":     m.ID,
+		"player":       playerName,
+		"action_type":  action.Type,
+		"text":         actionText,
+		"result":       result,
+		"game_state":   spectatorState,
+		"current_turn": currentTurnIdx,
 	})
 
 	// Check game over
@@ -490,10 +505,12 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 	}
 
 	// Notify spectators
+	finalState := mm.buildSpectatorGameState(m)
 	mm.hub.BroadcastToSpectators(m.ID, map[string]any{
-		"type":     "game_over",
-		"match_id": m.ID,
-		"result":   result,
+		"type":       "game_over",
+		"match_id":   m.ID,
+		"result":     fmt.Sprintf("%s", result.Reason),
+		"game_state": finalState,
 	})
 
 	// Cleanup
@@ -577,10 +594,7 @@ func (mm *MatchManager) getSpectatorViewLocked(m *Match) map[string]any {
 		}
 	}
 
-	views := make(map[string]any)
-	for _, p := range m.Players {
-		views[p] = m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
-	}
+	spectatorState := mm.buildSpectatorGameState(m)
 
 	// Determine current turn as player index (1 or 2)
 	currentTurnIdx := 0
@@ -596,11 +610,212 @@ func (mm *MatchManager) getSpectatorViewLocked(m *Match) map[string]any {
 		"game_type":    m.GameType,
 		"status":       string(m.Status),
 		"players":      playerInfos,
-		"player_views": views,
-		"game_state":   views,
+		"game_state":   spectatorState,
 		"turn_number":  m.State.TurnNumber,
 		"current_turn": currentTurnIdx,
 	}
+}
+
+// buildSpectatorGameState creates a spectator-friendly game state from the raw
+// engine state. Each game type renderer expects a different flat format.
+// Caller must hold m.mu.
+func (mm *MatchManager) buildSpectatorGameState(m *Match) map[string]any {
+	if m.State == nil || m.Engine == nil {
+		return nil
+	}
+
+	switch m.GameType {
+	case "prisoners_dilemma":
+		return mm.buildPrisonersSpectatorState(m)
+	case "poker":
+		return mm.buildPokerSpectatorState(m)
+	case "battleship":
+		return mm.buildBattleshipSpectatorState(m)
+	default:
+		// Fallback: raw player views keyed by player ID
+		views := make(map[string]any)
+		for _, p := range m.Players {
+			views[p] = m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+		}
+		return views
+	}
+}
+
+func (mm *MatchManager) buildPrisonersSpectatorState(m *Match) map[string]any {
+	data := m.State.Data
+	scores := data["scores"].(map[string]any)
+	history := data["history"].([]any)
+	totalRounds := data["total_rounds"]
+
+	p1 := m.Players[0]
+	p2 := m.Players[1]
+
+	// Build score arrays [p1Score, p2Score]
+	scoreArr := []any{scores[p1], scores[p2]}
+
+	// Build cooperation rates
+	coopCounts := map[string]int{p1: 0, p2: 0}
+	for _, h := range history {
+		hMap := h.(map[string]any)
+		if hMap[p1] == "cooperate" {
+			coopCounts[p1]++
+		}
+		if hMap[p2] == "cooperate" {
+			coopCounts[p2]++
+		}
+	}
+	var coopRates []float64
+	if len(history) > 0 {
+		coopRates = []float64{
+			float64(coopCounts[p1]) / float64(len(history)),
+			float64(coopCounts[p2]) / float64(len(history)),
+		}
+	} else {
+		coopRates = []float64{0, 0}
+	}
+
+	// Build moves array: each entry is [p1choice, p2choice]
+	moves := make([][]string, len(history))
+	for i, h := range history {
+		hMap := h.(map[string]any)
+		c1, _ := hMap[p1].(string)
+		c2, _ := hMap[p2].(string)
+		moves[i] = []string{c1, c2}
+	}
+
+	// Build cumulative score history for chart: [[p1cumul, p2cumul], ...]
+	scoreHistory := make([][]int, 0, len(history))
+	roundScores, _ := data["round_scores"].([]any)
+	cumP1, cumP2 := 0, 0
+	for _, rs := range roundScores {
+		rsMap := rs.(map[string]any)
+		s1, _ := rsMap[p1]
+		s2, _ := rsMap[p2]
+		cumP1 += toInt(s1)
+		cumP2 += toInt(s2)
+		scoreHistory = append(scoreHistory, []int{cumP1, cumP2})
+	}
+
+	return map[string]any{
+		"current_round":    m.State.TurnNumber + 1,
+		"total_rounds":     totalRounds,
+		"scores":           scoreArr,
+		"cooperation_rates": coopRates,
+		"moves":            moves,
+		"score_history":    scoreHistory,
+	}
+}
+
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func (mm *MatchManager) buildPokerSpectatorState(m *Match) map[string]any {
+	data := m.State.Data
+	chips := data["chips"].(map[string]any)
+	community, _ := data["community"]
+	pot := data["pot"]
+	playerBets, _ := data["player_bets"]
+	allIn, _ := data["all_in_players"]
+	hands, _ := data["hands"]
+
+	p1 := m.Players[0]
+	p2 := m.Players[1]
+
+	handsMap, _ := hands.(map[string]any)
+	betsMap, _ := playerBets.(map[string]any)
+	allInMap, _ := allIn.(map[string]any)
+
+	// Parse community cards into card objects for renderer
+	communityCards := parseCardStrings(community)
+
+	// Build player views - show cards at showdown, hide otherwise
+	showCards := m.State.Phase == "showdown" || m.State.Phase == "finished"
+	showdownResult, _ := data["showdown_result"].(map[string]any)
+	if showdownResult != nil {
+		showCards = true
+	}
+
+	players := make([]map[string]any, 2)
+	for i, pid := range []string{p1, p2} {
+		p := map[string]any{
+			"chips": chips[pid],
+		}
+		if betsMap != nil {
+			p["current_bet"] = betsMap[pid]
+		}
+		if allInMap != nil && allInMap[pid] == true {
+			p["last_action"] = "ALL IN"
+		}
+		// Show cards at showdown or if we have showdown_result
+		if showCards && handsMap != nil {
+			p["hand"] = parseCardStrings(handsMap[pid])
+		} else {
+			p["hand"] = []map[string]any{{}, {}} // face-down cards
+		}
+		players[i] = p
+	}
+
+	result := map[string]any{
+		"community_cards": communityCards,
+		"pot":             pot,
+		"players":         players,
+		"phase":           m.State.Phase,
+		"hand_number":     data["hand_number"],
+	}
+
+	if showdownResult != nil {
+		result["showdown"] = showdownResult
+	}
+
+	return result
+}
+
+// parseCardStrings converts card data ([]string like ["Ah","Kd"] or []any) into
+// card objects [{value, suit}] for the poker renderer
+func parseCardStrings(raw any) []map[string]any {
+	var strs []string
+	switch v := raw.(type) {
+	case []string:
+		strs = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				strs = append(strs, s)
+			}
+		}
+	default:
+		return nil
+	}
+
+	cards := make([]map[string]any, len(strs))
+	for i, s := range strs {
+		if len(s) >= 2 {
+			cards[i] = map[string]any{
+				"value": string(s[0]),
+				"suit":  string(s[1]),
+			}
+		} else {
+			cards[i] = map[string]any{"face_down": true}
+		}
+	}
+	return cards
+}
+
+func (mm *MatchManager) buildBattleshipSpectatorState(m *Match) map[string]any {
+	// Battleship renderer already handles playerID-keyed views
+	views := make(map[string]any)
+	for _, p := range m.Players {
+		views[p] = m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+	}
+	return views
 }
 
 func (mm *MatchManager) broadcastSpectatorState(m *Match) {
