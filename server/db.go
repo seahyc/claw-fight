@@ -52,6 +52,20 @@ type LeaderboardEntry struct {
 	GameType    string `json:"game_type"`
 	Rating      int    `json:"rating"`
 	GamesPlayed int    `json:"games_played"`
+	Wins        int    `json:"wins"`
+	Losses      int    `json:"losses"`
+	Draws       int    `json:"draws"`
+}
+
+type MatchWithPlayers struct {
+	ID        string    `json:"id"`
+	GameType  string    `json:"game_type"`
+	Status    string    `json:"status"`
+	Player1   string    `json:"player1"`
+	Player2   string    `json:"player2"`
+	Winner    string    `json:"winner,omitempty"`
+	Result    string    `json:"result,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func NewDB(path string) (*DB, error) {
@@ -243,10 +257,31 @@ func (db *DB) RecordEvent(matchID string, seq int, playerID, actionType string, 
 
 func (db *DB) GetLeaderboard(gameType string, limit int) ([]LeaderboardEntry, error) {
 	rows, err := db.conn.Query(`
-		SELECT e.player_id, p.name, e.game_type, e.rating, e.games_played
-		FROM elo_ratings e JOIN players p ON e.player_id = p.id
-		WHERE e.game_type = ? ORDER BY e.rating DESC LIMIT ?
-	`, gameType, limit)
+		SELECT e.player_id, p.name, e.game_type, e.rating, e.games_played,
+			COALESCE(w.cnt, 0), COALESCE(l.cnt, 0), COALESCE(d.cnt, 0)
+		FROM elo_ratings e
+		JOIN players p ON e.player_id = p.id
+		LEFT JOIN (
+			SELECT mp.player_id, COUNT(*) as cnt
+			FROM match_players mp JOIN matches m ON mp.match_id = m.id
+			WHERE m.game_type = ? AND m.status = 'finished' AND m.winner_id = mp.player_id
+			GROUP BY mp.player_id
+		) w ON e.player_id = w.player_id
+		LEFT JOIN (
+			SELECT mp.player_id, COUNT(*) as cnt
+			FROM match_players mp JOIN matches m ON mp.match_id = m.id
+			WHERE m.game_type = ? AND m.status = 'finished' AND m.winner_id != '' AND m.winner_id != mp.player_id
+			GROUP BY mp.player_id
+		) l ON e.player_id = l.player_id
+		LEFT JOIN (
+			SELECT mp.player_id, COUNT(*) as cnt
+			FROM match_players mp JOIN matches m ON mp.match_id = m.id
+			WHERE m.game_type = ? AND m.status = 'finished' AND (m.winner_id IS NULL OR m.winner_id = '')
+			GROUP BY mp.player_id
+		) d ON e.player_id = d.player_id
+		WHERE e.game_type = ?
+		ORDER BY e.rating DESC LIMIT ?
+	`, gameType, gameType, gameType, gameType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +290,7 @@ func (db *DB) GetLeaderboard(gameType string, limit int) ([]LeaderboardEntry, er
 	var entries []LeaderboardEntry
 	for rows.Next() {
 		var e LeaderboardEntry
-		if err := rows.Scan(&e.PlayerID, &e.PlayerName, &e.GameType, &e.Rating, &e.GamesPlayed); err != nil {
+		if err := rows.Scan(&e.PlayerID, &e.PlayerName, &e.GameType, &e.Rating, &e.GamesPlayed, &e.Wins, &e.Losses, &e.Draws); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -263,21 +298,66 @@ func (db *DB) GetLeaderboard(gameType string, limit int) ([]LeaderboardEntry, er
 	return entries, nil
 }
 
-func (db *DB) GetActiveMatches() ([]MatchRecord, error) {
+func (db *DB) GetActiveMatches() ([]MatchWithPlayers, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, game_type, status, challenge_code, created_at, started_at, ended_at, COALESCE(winner_id, '')
-		FROM matches WHERE status IN ('waiting', 'prep', 'active') ORDER BY created_at DESC
+		SELECT m.id, m.game_type, m.status,
+			COALESCE(p1.name, ''), COALESCE(p2.name, ''),
+			COALESCE(m.winner_id, ''), m.created_at
+		FROM matches m
+		LEFT JOIN match_players mp1 ON m.id = mp1.match_id AND mp1.seat = 0
+		LEFT JOIN players p1 ON mp1.player_id = p1.id
+		LEFT JOIN match_players mp2 ON m.id = mp2.match_id AND mp2.seat = 1
+		LEFT JOIN players p2 ON mp2.player_id = p2.id
+		WHERE m.status IN ('waiting', 'prep', 'active')
+		ORDER BY m.created_at DESC
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var matches []MatchRecord
+	var matches []MatchWithPlayers
 	for rows.Next() {
-		var m MatchRecord
-		if err := rows.Scan(&m.ID, &m.GameType, &m.Status, &m.ChallengeCode, &m.CreatedAt, &m.StartedAt, &m.EndedAt, &m.WinnerID); err != nil {
+		var m MatchWithPlayers
+		var winnerID string
+		if err := rows.Scan(&m.ID, &m.GameType, &m.Status, &m.Player1, &m.Player2, &winnerID, &m.CreatedAt); err != nil {
 			return nil, err
+		}
+		matches = append(matches, m)
+	}
+	return matches, nil
+}
+
+func (db *DB) GetRecentMatches(limit int) ([]MatchWithPlayers, error) {
+	rows, err := db.conn.Query(`
+		SELECT m.id, m.game_type, m.status,
+			COALESCE(p1.name, ''), COALESCE(p2.name, ''),
+			COALESCE(pw.name, ''), m.created_at
+		FROM matches m
+		LEFT JOIN match_players mp1 ON m.id = mp1.match_id AND mp1.seat = 0
+		LEFT JOIN players p1 ON mp1.player_id = p1.id
+		LEFT JOIN match_players mp2 ON m.id = mp2.match_id AND mp2.seat = 1
+		LEFT JOIN players p2 ON mp2.player_id = p2.id
+		LEFT JOIN players pw ON m.winner_id = pw.id
+		WHERE m.status = 'finished'
+		ORDER BY m.ended_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matches []MatchWithPlayers
+	for rows.Next() {
+		var m MatchWithPlayers
+		if err := rows.Scan(&m.ID, &m.GameType, &m.Status, &m.Player1, &m.Player2, &m.Winner, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		if m.Winner != "" {
+			m.Result = m.Winner + " wins"
+		} else {
+			m.Result = "Draw"
 		}
 		matches = append(matches, m)
 	}

@@ -7,7 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/claw-fight/server/engines"
 	"github.com/claw-fight/server/engines/battleship"
@@ -191,6 +194,22 @@ func (s *Server) handlePlayerPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIMatches(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "completed" {
+		limit := 10
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		matches, err := s.db.GetRecentMatches(limit)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, matches)
+		return
+	}
 	matches, err := s.db.GetActiveMatches()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -225,9 +244,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		hub:  s.hub,
-		conn: conn,
-		send: make(chan []byte, 256),
+		hub:     s.hub,
+		conn:    conn,
+		send:    make(chan []byte, 256),
+		eventCh: make(chan struct{}, 1),
 	}
 
 	s.hub.register <- client
@@ -248,6 +268,7 @@ func (s *Server) handleSpectateWS(w http.ResponseWriter, r *http.Request) {
 		conn:    conn,
 		matchID: matchID,
 		send:    make(chan []byte, 256),
+		eventCh: make(chan struct{}, 1),
 	}
 
 	s.hub.register <- client
@@ -278,6 +299,9 @@ type WSMessage struct {
 	Action     json.RawMessage `json:"action,omitempty"`
 	ActionType string          `json:"action_type,omitempty"`
 	ActionData map[string]any  `json:"action_data,omitempty"`
+	Message    string          `json:"message,omitempty"`
+	Scope      string          `json:"scope,omitempty"`
+	Types      []string        `json:"types,omitempty"`
 }
 
 func (s *Server) handleClientMessage(client *Client, raw []byte) {
@@ -308,6 +332,10 @@ func (s *Server) handleClientMessage(client *Client, raw []byte) {
 		s.handleGetState(client, msg)
 	case "ready":
 		s.handleReady(client, msg)
+	case "listen":
+		s.handleListen(client, msg)
+	case "chat":
+		s.handleChat(client, msg)
 	default:
 		client.SendJSON(map[string]any{"type": "error", "message": fmt.Sprintf("unknown message type: %s", msg.Type)})
 	}
@@ -613,6 +641,91 @@ func (s *Server) handleAPITournamentStart(w http.ResponseWriter, r *http.Request
 	}
 	t := s.tournMgr.GetTournament(id)
 	writeJSON(w, t)
+}
+
+func (s *Server) handleListen(client *Client, msg WSMessage) {
+	if client.playerID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		return
+	}
+
+	events := client.DrainEvents(msg.MatchID, msg.Types)
+	if len(events) == 0 {
+		// Block waiting for events, 5 min timeout
+		select {
+		case <-client.eventCh:
+		case <-time.After(5 * time.Minute):
+		}
+		events = client.DrainEvents(msg.MatchID, msg.Types)
+	}
+
+	if len(events) == 0 {
+		events = []map[string]any{}
+	}
+
+	client.SendJSON(map[string]any{
+		"type":   "events",
+		"events": events,
+	})
+}
+
+func (s *Server) handleChat(client *Client, msg WSMessage) {
+	if client.playerID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		return
+	}
+
+	matchID := msg.MatchID
+	if matchID == "" {
+		matchID = client.matchID
+	}
+	if matchID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "no match specified"})
+		return
+	}
+
+	m := s.matchMgr.GetMatch(matchID)
+	if m == nil {
+		client.SendJSON(map[string]any{"type": "error", "message": "match not found"})
+		return
+	}
+
+	m.mu.Lock()
+	if !slices.Contains(m.Players, client.playerID) {
+		m.mu.Unlock()
+		client.SendJSON(map[string]any{"type": "error", "message": "you are not in this match"})
+		return
+	}
+	players := make([]string, len(m.Players))
+	copy(players, m.Players)
+	m.EventSeq++
+	seq := m.EventSeq
+	m.mu.Unlock()
+
+	chatEvent := map[string]any{
+		"type":     "chat",
+		"match_id": matchID,
+		"from":     client.playerID,
+		"message":  msg.Message,
+		"scope":    msg.Scope,
+	}
+
+	// Queue to other players
+	for _, p := range players {
+		if p != client.playerID {
+			if c := s.hub.GetClientByPlayer(p); c != nil {
+				c.QueueEvent(chatEvent)
+			}
+		}
+	}
+
+	// Broadcast to spectators
+	s.hub.BroadcastToSpectators(matchID, chatEvent)
+
+	// Record in match_events
+	s.db.RecordEvent(matchID, seq, client.playerID, "chat", msg.Message, nil)
+
+	client.SendJSON(map[string]any{"type": "chat_sent"})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

@@ -110,8 +110,8 @@
         top10.forEach(function(p, i) {
             html += '<tr>' +
                 '<td class="rank">' + (i + 1) + '</td>' +
-                '<td><a href="/player/' + p.id + '">' + p.name + '</a></td>' +
-                '<td class="elo">' + p.elo + '</td>' +
+                '<td><a href="/player/' + p.player_id + '">' + p.player_name + '</a></td>' +
+                '<td class="elo">' + p.rating + '</td>' +
                 '<td>' + (p.wins || 0) + '/' + (p.losses || 0) + '/' + (p.draws || 0) + '</td>' +
             '</tr>';
         });

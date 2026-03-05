@@ -140,57 +140,6 @@ export class GameClient {
     });
   }
 
-  async waitForTurn(
-    matchId: string,
-    progressCallback: (msg: string) => void
-  ): Promise<WSMessage> {
-    // Check queue for existing your_turn or game_over messages
-    for (let i = 0; i < this.messageQueue.length; i++) {
-      const msg = this.messageQueue[i];
-      if (
-        (msg.type === "your_turn" || msg.type === "game_over") &&
-        msg.match_id === matchId
-      ) {
-        this.messageQueue.splice(i, 1);
-        return msg;
-      }
-    }
-
-    return new Promise((resolve, reject) => {
-      const interval = setInterval(() => {
-        progressCallback("Waiting for opponent...");
-      }, 10000);
-
-      const handler = (msg: WSMessage) => {
-        if (
-          (msg.type === "your_turn" || msg.type === "game_over") &&
-          msg.match_id === matchId
-        ) {
-          clearInterval(interval);
-          this.removeHandler(handler);
-          resolve(msg);
-        }
-      };
-
-      this.handlers.push(handler);
-
-      // Also check queued messages that might arrive during setup
-      for (let i = 0; i < this.messageQueue.length; i++) {
-        const msg = this.messageQueue[i];
-        if (
-          (msg.type === "your_turn" || msg.type === "game_over") &&
-          msg.match_id === matchId
-        ) {
-          this.messageQueue.splice(i, 1);
-          clearInterval(interval);
-          this.removeHandler(handler);
-          resolve(msg);
-          return;
-        }
-      }
-    });
-  }
-
   onMessage(handler: (msg: WSMessage) => void): void {
     this.handlers.push(handler);
   }

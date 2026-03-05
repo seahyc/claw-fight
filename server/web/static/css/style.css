@@ -760,6 +760,11 @@ a:hover {
     color: var(--text-muted);
 }
 
+.chat-entry { opacity: 0.9; }
+.chat-entry .chat-message { color: var(--cyan); font-style: italic; }
+.chat-entry .chat-icon { margin-right: 4px; }
+.chat-entry.whisper .chat-message { color: var(--text-muted); }
+
 .status-bar {
     display: flex;
     align-items: center;

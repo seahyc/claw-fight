@@ -475,10 +475,10 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 		mm.updateELO(winner, loser, m.GameType, result.Draw)
 	}
 
-	// Notify players
+	// Notify players via event queue
 	for _, p := range m.Players {
 		if c := mm.hub.GetClientByPlayer(p); c != nil {
-			c.SendJSON(map[string]any{
+			c.QueueEvent(map[string]any{
 				"type":     "game_over",
 				"match_id": m.ID,
 				"winner":   string(result.Winner),
@@ -523,7 +523,7 @@ func (mm *MatchManager) updateELO(winnerID, loserID, gameType string, draw bool)
 }
 
 func (mm *MatchManager) sendPlayerTurn(c *Client, matchID string, view *engines.PlayerView) {
-	c.SendJSON(map[string]any{
+	c.QueueEvent(map[string]any{
 		"type":              "your_turn",
 		"match_id":          matchID,
 		"phase":             view.Phase,

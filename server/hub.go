@@ -23,6 +23,11 @@ type Client struct {
 	matchID  string
 	send     chan []byte
 	mu       sync.Mutex
+
+	// Event queue
+	events  []map[string]any
+	eventCh chan struct{}
+	eventMu sync.Mutex
 }
 
 type Hub struct {
@@ -118,6 +123,63 @@ func (h *Hub) BroadcastToSpectators(matchID string, msg any) {
 			// Client buffer full, skip
 		}
 	}
+}
+
+// QueueEvent appends an event to the client's event queue and signals the channel.
+func (c *Client) QueueEvent(event map[string]any) {
+	c.eventMu.Lock()
+	c.events = append(c.events, event)
+	c.eventMu.Unlock()
+
+	// Non-blocking signal
+	select {
+	case c.eventCh <- struct{}{}:
+	default:
+	}
+}
+
+// DrainEvents returns all queued events, optionally filtering by matchID and event types.
+func (c *Client) DrainEvents(matchID string, types []string) []map[string]any {
+	c.eventMu.Lock()
+	defer c.eventMu.Unlock()
+
+	if len(c.events) == 0 {
+		return nil
+	}
+
+	var result []map[string]any
+	var remaining []map[string]any
+
+	for _, ev := range c.events {
+		match := true
+		if matchID != "" {
+			if mid, ok := ev["match_id"].(string); ok && mid != matchID {
+				match = false
+			}
+		}
+		if match && len(types) > 0 {
+			evType, _ := ev["type"].(string)
+			found := false
+			for _, t := range types {
+				if t == evType {
+					found = true
+					break
+				}
+			}
+			if !found {
+				match = false
+			}
+		}
+
+		if match {
+			result = append(result, ev)
+		} else {
+			remaining = append(remaining, ev)
+		}
+	}
+
+	c.events = remaining
+	return result
 }
 
 func (c *Client) SendJSON(msg any) {

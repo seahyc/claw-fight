@@ -11,7 +11,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "play",
     description:
-      "Join or create a game match. Smart entry point: with a code, joins that specific match; without, joins an open match or creates a new one and waits. Blocks until matched with an opponent and the game starts. Returns the match ID, spectator URL, and initial game state.",
+      "Join or create a game match. Smart entry point: with a code, joins that specific match; without, joins an open match or creates a new one. Returns match info immediately after matching. Call listen() to get game events.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -36,7 +36,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "perform_action",
     description:
-      "Submit your move in a match. Returns the result of the action and the updated game state. If the action is invalid, returns an error - retry with a corrected action.",
+      "Submit your move in a match. Returns the action result immediately. Call listen() afterwards to get the next game events (your_turn, game_over, etc).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -59,18 +59,47 @@ export const toolDefinitions: ToolDef[] = [
     },
   },
   {
-    name: "wait_for_turn",
+    name: "listen",
     description:
-      "Block until it's your turn. Returns the current game state (board, available actions) or game over result. Use this after perform_action says it's the opponent's turn.",
+      "Universal blocking wait. Returns queued events (your_turn, chat, game_over, match_found). Call after play() or perform_action() to get next events. Blocks up to 5 minutes.",
     inputSchema: {
       type: "object" as const,
       properties: {
         match_id: {
           type: "string",
-          description: "The match ID to wait for",
+          description: "Filter events for a specific match",
+        },
+        types: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Filter by event types (e.g. ['your_turn', 'chat', 'game_over'])",
         },
       },
-      required: ["match_id"],
+      required: [],
+    },
+  },
+  {
+    name: "chat",
+    description:
+      "Send in-game message to other players in a match.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        match_id: {
+          type: "string",
+          description: "The match ID",
+        },
+        message: {
+          type: "string",
+          description: "The message to send",
+        },
+        scope: {
+          type: "string",
+          description: "Message scope: 'match' (default, all players) or 'opponent'",
+        },
+      },
+      required: ["match_id", "message"],
     },
   },
   {
@@ -184,52 +213,11 @@ export async function handleToolCall(
         // Signal ready
         client.send({ type: "ready", match_id: matchId });
 
-        // Wait for game to start and get initial state
-        // Progress while waiting for game start
-        const startProgress = progressToken
-          ? setInterval(() => {
-              server.notification({
-                method: "notifications/progress",
-                params: {
-                  progressToken: progressToken!,
-                  progress: 0,
-                  total: 0,
-                  message: "Waiting for game to start...",
-                },
-              });
-            }, 10000)
-          : undefined;
-
-        try {
-          // Wait for your_turn (initial game state) or game_start then your_turn
-          const state = await client.waitForTurn(matchId, (msg) => {
-            if (progressToken) {
-              server.notification({
-                method: "notifications/progress",
-                params: {
-                  progressToken: progressToken!,
-                  progress: 0,
-                  total: 0,
-                  message: msg,
-                },
-              });
-            }
-          });
-
-          return text({
-            match_id: matchId,
-            spectator_url: spectatorUrl,
-            phase: state.phase,
-            your_turn: state.your_turn,
-            simultaneous: state.simultaneous,
-            board: state.board,
-            available_actions: state.available_actions,
-            turn_number: state.turn_number,
-            game_specific: state.game_specific,
-          });
-        } finally {
-          if (startProgress) clearInterval(startProgress);
-        }
+        return text({
+          match_id: matchId,
+          spectator_url: spectatorUrl,
+          status: "matched",
+        });
       }
 
       case "perform_action": {
@@ -262,83 +250,34 @@ export async function handleToolCall(
           };
         }
 
-        // After a successful action, wait briefly for the next your_turn or game_over
-        try {
-          const next = await client.waitForTurn(args.match_id, () => {});
-
-          if (next.type === "game_over") {
-            return text({
-              success: true,
-              message: response.message,
-              data: response.data,
-              game_over: true,
-              winner: next.winner,
-              draw: next.draw,
-              scores: next.scores,
-              reason: next.reason,
-            });
-          }
-
-          return text({
-            success: true,
-            message: response.message,
-            data: response.data,
-            your_turn: next.your_turn,
-            phase: next.phase,
-            board: next.board,
-            available_actions: next.available_actions,
-            turn_number: next.turn_number,
-            game_specific: next.game_specific,
-          });
-        } catch {
-          // If we can't get next state quickly, just return the action result
-          return text({
-            success: true,
-            message: response.message,
-            data: response.data,
-          });
-        }
+        return text({
+          success: true,
+          message: response.message,
+          data: response.data,
+        });
       }
 
-      case "wait_for_turn": {
-        const progressCallback = (msg: string) => {
-          if (progressToken) {
-            server.notification({
-              method: "notifications/progress",
-              params: {
-                progressToken: progressToken!,
-                progress: 0,
-                total: 0,
-                message: msg,
-              },
-            });
-          }
-        };
-
-        const response = await client.waitForTurn(
-          args.match_id,
-          progressCallback
-        );
-
-        if (response.type === "game_over") {
-          return text({
-            game_over: true,
-            winner: response.winner,
-            draw: response.draw,
-            scores: response.scores,
-            reason: response.reason,
-          });
-        }
-
-        return text({
-          phase: response.phase,
-          your_turn: response.your_turn,
-          simultaneous: response.simultaneous,
-          board: response.board,
-          available_actions: response.available_actions,
-          turn_number: response.turn_number,
-          game_specific: response.game_specific,
+      case "listen": {
+        client.send({
+          type: "listen",
+          match_id: args.match_id,
+          types: args.types,
         });
+
+        const response = await client.waitForMessage("events", 300000);
+        return text({ events: response.events });
+      }
+
+      case "chat": {
+        client.send({
+          type: "chat",
+          match_id: args.match_id,
+          message: args.message,
+          scope: args.scope,
+        });
+
+        await client.waitForMessage("chat_sent", 10000);
+        return text({ sent: true });
       }
 
       case "get_rules": {

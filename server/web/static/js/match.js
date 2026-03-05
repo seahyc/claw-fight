@@ -100,6 +100,21 @@
             MatchViewer.setStatus('COMPLETE');
         },
 
+        appendChat: function(from, message, scope) {
+            var entry = document.createElement('div');
+            entry.className = 'action-log-entry chat-entry';
+            if (scope === 'opponent') entry.className += ' whisper';
+
+            var playerClass = from === MatchViewer.players.p1 ? 'p1' : 'p2';
+            entry.innerHTML =
+                '<span class="chat-icon">\uD83D\uDCAC</span>' +
+                '<span class="action-log-player ' + playerClass + '">' + from + '</span> ' +
+                '<span class="chat-message">' + escapeHtml(message) + '</span>';
+
+            actionLog.appendChild(entry);
+            actionLog.scrollTop = actionLog.scrollHeight;
+        },
+
         renderBoard: function(state) {
             MatchViewer.state = state;
             if (gameType === 'battleship' && typeof renderBattleshipBoard === 'function') {
@@ -113,6 +128,12 @@
     };
 
     window.MatchViewer = MatchViewer;
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
+    }
 
     function handleMessage(msg) {
         switch (msg.type) {
@@ -145,6 +166,10 @@
                 if (msg.game_state) MatchViewer.renderBoard(msg.game_state);
                 if (msg.current_turn) MatchViewer.setTurn(msg.current_turn);
                 if (msg.turn_deadline) MatchViewer.setTimer(msg.turn_deadline);
+                break;
+
+            case 'chat':
+                MatchViewer.appendChat(msg.from, msg.message, msg.scope);
                 break;
 
             case 'game_over':
