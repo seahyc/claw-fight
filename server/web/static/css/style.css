@@ -765,6 +765,21 @@ a:hover {
 .chat-entry .chat-icon { margin-right: 4px; }
 .chat-entry.whisper .chat-message { color: var(--text-muted); }
 
+.ws-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 0.5rem;
+    transition: background-color 0.3s;
+}
+.ws-connected { background-color: var(--green); box-shadow: 0 0 6px var(--green); }
+.ws-disconnected { background-color: var(--red); box-shadow: 0 0 6px var(--red); animation: pulse-dot 1.5s infinite; }
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
 .status-bar {
     display: flex;
     align-items: center;

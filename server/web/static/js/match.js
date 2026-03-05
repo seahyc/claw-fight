@@ -19,12 +19,21 @@
     var p2EloEl = document.getElementById('p2-elo');
     var turnP1El = document.getElementById('turn-p1');
     var turnP2El = document.getElementById('turn-p2');
+    var wsStatusEl = document.getElementById('ws-status');
 
     var ws = null;
     var reconnectDelay = 1000;
     var maxReconnectDelay = 30000;
     var timerInterval = null;
     var turnDeadline = null;
+    var lastMatchState = null;
+
+    function setWsStatus(connected) {
+        if (!wsStatusEl) return;
+        wsStatusEl.classList.toggle('ws-connected', connected);
+        wsStatusEl.classList.toggle('ws-disconnected', !connected);
+        wsStatusEl.title = connected ? 'Connected' : 'Reconnecting...';
+    }
 
     var MatchViewer = {
         matchId: matchId,
@@ -124,6 +133,11 @@
             } else if (gameType === 'prisoners_dilemma' && typeof renderPrisonersBoard === 'function') {
                 renderPrisonersBoard(state);
             }
+        },
+
+        restoreLastState: function() {
+            if (!lastMatchState) return;
+            handleMessage(lastMatchState);
         }
     };
 
@@ -138,6 +152,7 @@
     function handleMessage(msg) {
         switch (msg.type) {
             case 'match_state':
+                lastMatchState = msg;
                 if (msg.players) {
                     MatchViewer.players.p1 = msg.players[0] ? msg.players[0].name : 'Player 1';
                     MatchViewer.players.p2 = msg.players[1] ? msg.players[1].name : 'Player 2';
@@ -187,6 +202,7 @@
 
         ws.onopen = function() {
             reconnectDelay = 1000;
+            setWsStatus(true);
             MatchViewer.appendAction(null, 'Connected to match');
         };
 
@@ -200,7 +216,8 @@
         };
 
         ws.onclose = function() {
-            MatchViewer.appendAction(null, 'Disconnected. Reconnecting...');
+            setWsStatus(false);
+            // Don't spam action log - just update the status indicator
             setTimeout(function() {
                 reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
                 connect();
