@@ -1,5 +1,10 @@
 import WebSocket from "ws";
+import { appendFileSync } from "fs";
 import type { WSMessage } from "./types.js";
+
+function dbg(msg: string) {
+  appendFileSync("/tmp/claw-fight-mcp.log", `${new Date().toISOString()} ${msg}\n`);
+}
 
 function generatePlayerName(): string {
   const suffix = Math.floor(Math.random() * 10000)
@@ -28,8 +33,7 @@ export class GameClient {
   private closed = false;
 
   constructor() {
-    this.serverUrl =
-      process.env.CLAW_FIGHT_SERVER || "ws://localhost:7429/ws";
+    this.serverUrl = "ws://localhost:7429/ws";
     this.playerName = generatePlayerName();
   }
 
@@ -37,6 +41,7 @@ export class GameClient {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     return new Promise((resolve, reject) => {
+      dbg(`Connecting to: ${this.serverUrl}`);
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on("open", () => {
@@ -55,7 +60,19 @@ export class GameClient {
         }
       });
 
+      this.ws.on("unexpected-response", (_req, res) => {
+        let body = "";
+        res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        res.on("end", () => {
+          dbg(`Unexpected response: ${res.statusCode} ${res.statusMessage}`);
+          dbg(`Headers: ${JSON.stringify(res.headers)}`);
+          dbg(`Body: ${body}`);
+          reject(new Error(`Unexpected server response: ${res.statusCode} - ${body}`));
+        });
+      });
+
       this.ws.on("error", (err) => {
+        dbg(`Error: ${err.message}`);
         if (this.ws?.readyState !== WebSocket.OPEN) {
           reject(err);
         }
@@ -114,6 +131,52 @@ export class GameClient {
       throw new Error("WebSocket is not connected");
     }
     this.ws.send(JSON.stringify(message));
+  }
+
+  waitForMessageAny(types: string[], timeout = 60000): Promise<WSMessage> {
+    // Check queue first
+    for (const type of types) {
+      const queueIndex = this.messageQueue.findIndex((m) => m.type === type);
+      if (queueIndex >= 0) {
+        const msg = this.messageQueue[queueIndex];
+        this.messageQueue.splice(queueIndex, 1);
+        return Promise.resolve(msg);
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter: PendingWaiter = {
+        type: types[0], // placeholder, overridden below
+        resolve,
+        reject,
+      };
+
+      const checkAndResolve = (msg: WSMessage) => {
+        if (types.includes(msg.type)) {
+          const idx = this.waiters.indexOf(waiter);
+          if (idx >= 0) this.waiters.splice(idx, 1);
+          if (waiter.timer) clearTimeout(waiter.timer);
+          resolve(msg);
+          return true;
+        }
+        return false;
+      };
+
+      // Intercept via handler
+      const handler = (msg: WSMessage) => {
+        if (checkAndResolve(msg)) {
+          this.removeHandler(handler);
+        }
+      };
+      this.handlers.push(handler);
+
+      if (timeout > 0) {
+        waiter.timer = setTimeout(() => {
+          this.removeHandler(handler);
+          reject(new Error(`Timeout waiting for message types: ${types.join(", ")}`));
+        }, timeout);
+      }
+    });
   }
 
   waitForMessage(type: string, timeout = 60000): Promise<WSMessage> {

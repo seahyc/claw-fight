@@ -461,9 +461,26 @@ func (s *Server) handleFindMatch(client *Client, msg WSMessage) {
 		gameType = "battleship"
 	}
 
-	if err := s.matchmaker.Enqueue(gameType, client.playerID); err != nil {
+	// Try to pair immediately with a waiting player; if none, create a pending
+	// match with a shareable code so the player can invite an opponent.
+	code, matchID, err := s.matchmaker.EnqueueOrCreate(gameType, client.playerID)
+	if err != nil {
 		client.SendJSON(map[string]any{"type": "error", "message": err.Error()})
+		return
 	}
+
+	if code != "" {
+		// No opponent yet – return a code the player can share
+		client.matchID = matchID
+		client.SendJSON(map[string]any{
+			"type":          "match_queued",
+			"match_id":      matchID,
+			"code":          code,
+			"spectator_url": spectatorURL(matchID),
+			"message":       "No opponent found yet. Share the code with your opponent so they can join, or wait for auto-match.",
+		})
+	}
+	// If code == "" an opponent was found immediately; match_found is sent by the matchmaker.
 }
 
 func (s *Server) handleActionMsg(client *Client, msg WSMessage) {

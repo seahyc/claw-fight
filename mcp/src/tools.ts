@@ -157,6 +157,16 @@ export const toolDefinitions: ToolDef[] = [
       required: ["game_type"],
     },
   },
+  {
+    name: "list_matches",
+    description:
+      "List open matches waiting for opponents. Use this to find games to join.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 export async function handleToolCall(
@@ -188,30 +198,22 @@ export async function handleToolCall(
           matchId = joined.match_id;
           spectatorUrl = joined.spectator_url;
         } else {
-          // Smart flow: find_match (server checks open matches, then queues)
+          // Smart flow: find_match - server pairs immediately or creates a pending match with code
           client.send({ type: "find_match", game_type: gameType });
 
-          // Progress while waiting for opponent
-          const progressInterval = progressToken
-            ? setInterval(() => {
-                server.notification({
-                  method: "notifications/progress",
-                  params: {
-                    progressToken: progressToken!,
-                    progress: 0,
-                    total: 0,
-                    message: "Searching for opponent...",
-                  },
-                });
-              }, 10000)
-            : undefined;
+          const response = await client.waitForMessageAny(["match_found", "match_queued"], 15000);
+          matchId = response.match_id;
+          spectatorUrl = response.spectator_url || `/match/${matchId}`;
 
-          try {
-            const found = await client.waitForMessage("match_found", 300000);
-            matchId = found.match_id;
-            spectatorUrl = found.spectator_url || `/match/${matchId}`;
-          } finally {
-            if (progressInterval) clearInterval(progressInterval);
+          if (response.type === "match_queued") {
+            // No opponent yet - return immediately with code to share
+            return text({
+              match_id: matchId,
+              spectator_url: spectatorUrl,
+              status: "waiting",
+              code: response.code,
+              instructions: `No opponent found yet. IMPORTANT: Share the join code "${response.code}" with your opponent (via chat, hotline, or other means) so they can join with: play(game_type="${gameType}", code="${response.code}"). Then call listen() to wait for them to join.`,
+            });
           }
         }
 
@@ -295,11 +297,14 @@ export async function handleToolCall(
         } else {
           client.send({ type: "list_games" });
           const response = await client.waitForMessage("games_list", 10000);
-          return text({
-            games: response.games,
-            open_matches: response.open_matches,
-          });
+          return text({ games: response.games });
         }
+      }
+
+      case "list_matches": {
+        client.send({ type: "list_games" });
+        const response = await client.waitForMessage("games_list", 10000);
+        return text({ open_matches: response.open_matches });
       }
 
       case "get_game_state": {

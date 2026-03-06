@@ -85,6 +85,53 @@ func (m *Matchmaker) Enqueue(gameType, playerID string) error {
 	return nil
 }
 
+// EnqueueOrCreate tries to immediately pair with a waiting player.
+// If successful, it triggers match_found for both and returns ("", "", nil).
+// If no match, it creates a pending match with a shareable code and returns (code, matchID, nil).
+func (m *Matchmaker) EnqueueOrCreate(gameType, playerID string) (code string, matchID string, err error) {
+	engine := m.mm.GetEngine(gameType)
+	if engine == nil {
+		return "", "", fmt.Errorf("unknown game type: %s", gameType)
+	}
+
+	elo, err := m.db.GetOrCreateELO(playerID, gameType)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get rating: %w", err)
+	}
+
+	m.mu.Lock()
+	if m.queues[gameType] == nil {
+		m.queues[gameType] = &MatchmakingQueue{}
+	}
+	q := m.queues[gameType]
+	m.mu.Unlock()
+
+	q.mu.Lock()
+
+	// Check for an existing waiting player to pair with
+	for i, e := range q.entries {
+		ratingDiff := math.Abs(float64(e.Rating - elo.Rating))
+		if ratingDiff <= 500 { // generous range for immediate pair
+			opponent := e.PlayerID
+			q.entries = append(q.entries[:i], q.entries[i+1:]...)
+			q.mu.Unlock()
+			go m.createMatchForPair(gameType, opponent, playerID)
+			return "", "", nil
+		}
+	}
+
+	q.mu.Unlock()
+
+	// No match found – create a pending match with a code
+	match, err := m.mm.CreateMatch(gameType, playerID, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create match: %w", err)
+	}
+
+	log.Printf("Player %s queued for %s (rating: %d)", playerID, gameType, elo.Rating)
+	return match.ChallengeCode, match.ID, nil
+}
+
 func (m *Matchmaker) runLoop() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
