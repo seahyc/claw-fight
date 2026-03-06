@@ -37,20 +37,21 @@ export class GameClient {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     return new Promise((resolve, reject) => {
-      console.error(`[GameClient] Connecting to ${this.serverUrl}`);
       try {
         this.ws = new WebSocket(this.serverUrl, {
           handshakeTimeout: 10000,
           perMessageDeflate: false,
         });
       } catch (e) {
-        console.error(`[GameClient] Failed to create WebSocket:`, e);
         reject(e);
         return;
       }
 
+      let resolved = false;
+
       this.ws.on("open", () => {
         this.reconnectAttempts = 0;
+        resolved = true;
         resolve();
       });
 
@@ -60,14 +61,15 @@ export class GameClient {
       });
 
       this.ws.on("close", () => {
-        if (!this.closed) {
+        if (!this.closed && !resolved) {
+          reject(new Error("WebSocket closed before connection established"));
+        } else if (!this.closed) {
           this.tryReconnect();
         }
       });
 
       this.ws.on("error", (err) => {
-        console.error(`[GameClient] WebSocket error:`, err.message);
-        if (this.ws?.readyState !== WebSocket.OPEN) {
+        if (!resolved) {
           reject(err);
         }
       });
@@ -169,9 +171,7 @@ export class GameClient {
   }
 
   isConnected(): boolean {
-    const connected = this.ws?.readyState === WebSocket.OPEN;
-    console.error(`[GameClient] isConnected: ws=${!!this.ws}, readyState=${this.ws?.readyState}, OPEN=${WebSocket.OPEN}, result=${connected}`);
-    return connected;
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   close(): void {
