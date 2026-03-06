@@ -17,7 +17,8 @@ const server = new Server(
 let client: GameClient | null = null;
 
 async function getClient(): Promise<GameClient> {
-  if (!client) {
+  if (!client || !client.isConnected()) {
+    if (client) client.close();
     client = new GameClient();
     await client.connect();
     await client.register();

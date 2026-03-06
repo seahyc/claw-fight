@@ -157,6 +157,10 @@ export class GameClient {
     return this.playerName;
   }
 
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
   close(): void {
     this.closed = true;
     if (this.ws) {
