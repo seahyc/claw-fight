@@ -29,7 +29,7 @@ export class GameClient {
 
   constructor() {
     this.serverUrl =
-      process.env.CLAW_FIGHT_SERVER || "ws://localhost:7429/ws";
+      process.env.CLAW_FIGHT_SERVER || "ws://127.0.0.1:7429/ws";
     this.playerName = generatePlayerName();
   }
 
@@ -37,21 +37,10 @@ export class GameClient {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     return new Promise((resolve, reject) => {
-      try {
-        this.ws = new WebSocket(this.serverUrl, {
-          handshakeTimeout: 10000,
-          perMessageDeflate: false,
-        });
-      } catch (e) {
-        reject(e);
-        return;
-      }
-
-      let resolved = false;
+      this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on("open", () => {
         this.reconnectAttempts = 0;
-        resolved = true;
         resolve();
       });
 
@@ -61,15 +50,13 @@ export class GameClient {
       });
 
       this.ws.on("close", () => {
-        if (!this.closed && !resolved) {
-          reject(new Error("WebSocket closed before connection established"));
-        } else if (!this.closed) {
+        if (!this.closed) {
           this.tryReconnect();
         }
       });
 
       this.ws.on("error", (err) => {
-        if (!resolved) {
+        if (this.ws?.readyState !== WebSocket.OPEN) {
           reject(err);
         }
       });
