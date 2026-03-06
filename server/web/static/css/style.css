@@ -1742,3 +1742,63 @@ a:hover {
         height: 22px;
     }
 }
+
+/* ========================================
+   Last shot highlight
+   ======================================== */
+
+.battleship-cell.last-shot {
+    animation: pulse-shot 1.5s ease-in-out infinite;
+    box-shadow: 0 0 8px 2px var(--gold);
+    z-index: 2;
+    position: relative;
+}
+
+@keyframes pulse-shot {
+    0%, 100% { box-shadow: 0 0 8px 2px var(--gold); }
+    50% { box-shadow: 0 0 16px 4px var(--gold); }
+}
+
+/* Poker phase banner */
+.poker-phase-banner {
+    text-align: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.9rem;
+    color: var(--gold);
+    padding: 8px;
+    margin-bottom: 8px;
+    text-shadow: 2px 2px 0 var(--text-shadow);
+    letter-spacing: 2px;
+}
+
+.poker-hand-number {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* Poker showdown result */
+.poker-showdown-result {
+    text-align: center;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.85rem;
+    color: var(--gold);
+    padding: 10px;
+    margin-top: 12px;
+    background: rgba(255, 215, 0, 0.1);
+    border: var(--border-w) solid var(--gold-dim);
+}
+
+/* Battleship sunk counter */
+.battleship-sunk-counter {
+    text-align: center;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 6px;
+    margin-top: 4px;
+}
+
+.battleship-sunk-counter .sunk-count {
+    color: var(--red);
+    font-weight: bold;
+}

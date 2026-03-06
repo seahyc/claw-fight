@@ -543,7 +543,6 @@ func (e *PokerEngine) GetPlayerView(state *engines.GameState, player engines.Pla
 	playerBets := getStringIntMap(state.Data, "player_bets")
 	dealer := getInt(state.Data, "dealer")
 	handNum := getInt(state.Data, "hand_number")
-	round := getString(state.Data, "betting_round")
 	allIn := getStringBoolMap(state.Data, "all_in_players")
 
 	otherPID := string(otherPlayer(state, player))
@@ -581,9 +580,8 @@ func (e *PokerEngine) GetPlayerView(state *engines.GameState, player engines.Pla
 	}
 
 	gameSpecific := map[string]any{
-		"hand_number":   handNum,
-		"betting_round": round,
-		"dealer":        string(state.Players[dealer]),
+		"hand_number": handNum,
+		"is_dealer":   state.Players[dealer] == player,
 		"your_all_in":     allIn[pid],
 		"opponent_all_in": allIn[otherPID],
 	}

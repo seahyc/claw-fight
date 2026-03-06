@@ -389,6 +389,7 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 		"result":       result,
 		"game_state":   spectatorState,
 		"current_turn": currentTurnIdx,
+		"timestamp":    time.Now().UnixMilli(),
 	})
 
 	// Check game over
@@ -511,6 +512,7 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 		"match_id":   m.ID,
 		"result":     fmt.Sprintf("%s", result.Reason),
 		"game_state": finalState,
+		"timestamp":  time.Now().UnixMilli(),
 	})
 
 	// Cleanup
@@ -605,7 +607,7 @@ func (mm *MatchManager) getSpectatorViewLocked(m *Match) map[string]any {
 		}
 	}
 
-	return map[string]any{
+	view := map[string]any{
 		"match_id":     m.ID,
 		"game_type":    m.GameType,
 		"status":       string(m.Status),
@@ -614,6 +616,29 @@ func (mm *MatchManager) getSpectatorViewLocked(m *Match) map[string]any {
 		"turn_number":  m.State.TurnNumber,
 		"current_turn": currentTurnIdx,
 	}
+
+	if m.State != nil && len(m.State.ActionLog) > 0 {
+		logEntries := m.State.ActionLog
+		if len(logEntries) > 30 {
+			logEntries = logEntries[len(logEntries)-30:]
+		}
+		actionLog := make([]map[string]any, len(logEntries))
+		for i, entry := range logEntries {
+			playerName := string(entry.Player)
+			if p, err := mm.db.GetPlayer(string(entry.Player)); err == nil && p.Name != "" {
+				playerName = p.Name
+			}
+			actionLog[i] = map[string]any{
+				"player":      playerName,
+				"action_type": entry.Action.Type,
+				"message":     entry.Result.Message,
+				"seq":         entry.Seq,
+			}
+		}
+		view["action_log"] = actionLog
+	}
+
+	return view
 }
 
 // buildSpectatorGameState creates a spectator-friendly game state from the raw
@@ -810,12 +835,55 @@ func parseCardStrings(raw any) []map[string]any {
 }
 
 func (mm *MatchManager) buildBattleshipSpectatorState(m *Match) map[string]any {
-	// Battleship renderer already handles playerID-keyed views
 	views := make(map[string]any)
+	shipStatus := make(map[string]any)
 	for _, p := range m.Players {
-		views[p] = m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+		pv := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+		views[p] = pv
+		if gs, ok := pv.GameSpecific["ships"]; ok {
+			switch ships := gs.(type) {
+			case []map[string]any:
+				total := len(ships)
+				sunk := 0
+				for _, ship := range ships {
+					if isSunk, ok := ship["sunk"].(bool); ok && isSunk {
+						sunk++
+					}
+				}
+				shipStatus[p] = map[string]any{"sunk": sunk, "total": total}
+			case []any:
+				total := len(ships)
+				sunk := 0
+				for _, s := range ships {
+					if ship, ok := s.(map[string]any); ok {
+						if isSunk, ok := ship["sunk"].(bool); ok && isSunk {
+							sunk++
+						}
+					}
+				}
+				shipStatus[p] = map[string]any{"sunk": sunk, "total": total}
+			}
+		}
 	}
-	return views
+
+	result := map[string]any{
+		"views":       views,
+		"ship_status": shipStatus,
+	}
+
+	if m.State != nil && len(m.State.ActionLog) > 0 {
+		lastEntry := m.State.ActionLog[len(m.State.ActionLog)-1]
+		if lastEntry.Action.Type == "fire" {
+			if target, ok := lastEntry.Action.Data["target"]; ok {
+				result["last_action"] = map[string]any{
+					"player": string(lastEntry.Player),
+					"target": target,
+				}
+			}
+		}
+	}
+
+	return result
 }
 
 func (mm *MatchManager) broadcastSpectatorState(m *Match) {

@@ -168,7 +168,6 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 	roundChoices := state.Data["round_choices"].(map[string]any)
 	totalRounds := toInt(state.Data["total_rounds"])
 	history := state.Data["history"].([]any)
-	roundScores := state.Data["round_scores"].([]any)
 
 	_, hasSubmitted := roundChoices[string(player)]
 
@@ -177,15 +176,18 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		availableActions = []string{"choose"}
 	}
 
-	// Build board: history of all past rounds
-	pastRounds := make([]map[string]any, len(history))
-	for i, h := range history {
-		hMap := h.(map[string]any)
-		rsMap := roundScores[i].(map[string]any)
-		pastRounds[i] = map[string]any{
+	// Build board: last 5 rounds of history
+	maxHistory := 5
+	startIdx := 0
+	if len(history) > maxHistory {
+		startIdx = len(history) - maxHistory
+	}
+	pastRounds := make([]map[string]any, len(history)-startIdx)
+	for i := startIdx; i < len(history); i++ {
+		hMap := history[i].(map[string]any)
+		pastRounds[i-startIdx] = map[string]any{
 			"round":   i + 1,
 			"choices": hMap,
-			"scores":  rsMap,
 		}
 	}
 
@@ -223,8 +225,9 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 			"scores":            scoreBoard,
 			"total_rounds":      totalRounds,
 			"rounds_remaining":  totalRounds - state.TurnNumber,
-			"cooperation_rates": cooperationRates,
-			"waiting":           hasSubmitted,
+			"cooperation_rates":    cooperationRates,
+			"full_history_length": len(history),
+			"waiting":              hasSubmitted,
 		},
 	}
 }

@@ -38,6 +38,20 @@
         var table = document.createElement('div');
         table.className = 'poker-table';
 
+        // Phase banner
+        var phaseNames = {preflop: 'PRE-FLOP', flop: 'FLOP', turn: 'TURN', river: 'RIVER', showdown: 'SHOWDOWN'};
+        var phaseBanner = document.createElement('div');
+        phaseBanner.className = 'poker-phase-banner';
+        var phaseText = phaseNames[state.phase] || (state.phase || '').toUpperCase();
+        phaseBanner.textContent = phaseText;
+        if (state.hand_number) {
+            var handNum = document.createElement('span');
+            handNum.className = 'poker-hand-number';
+            handNum.textContent = ' \u2022 Hand #' + state.hand_number;
+            phaseBanner.appendChild(handNum);
+        }
+        table.appendChild(phaseBanner);
+
         // Community cards
         var community = document.createElement('div');
         community.className = 'poker-community';
@@ -103,6 +117,23 @@
         }
 
         table.appendChild(playersArea);
+
+        // Showdown result
+        if (state.showdown && state.showdown.hands) {
+            var showdownBanner = document.createElement('div');
+            showdownBanner.className = 'poker-showdown-result';
+            var hands = state.showdown.hands;
+            var handKeys = Object.keys(hands);
+            var parts = [];
+            for (var si = 0; si < handKeys.length; si++) {
+                var h = hands[handKeys[si]];
+                var pName = (window.MatchViewer && window.MatchViewer.players['p' + (si+1)]) || handKeys[si];
+                parts.push(pName + ': ' + (h.rank_name || 'Unknown'));
+            }
+            showdownBanner.textContent = parts.join(' vs ');
+            table.appendChild(showdownBanner);
+        }
+
         boardEl.appendChild(table);
     };
 })();

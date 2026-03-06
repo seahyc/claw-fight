@@ -169,42 +169,44 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 	// Ship initial letters for display
 	shipChars := map[int]string{0: "C", 1: "B", 2: "R", 3: "S", 4: "D"} // carrier, battleship, cruiser, submarine, destroyer
 
-	// Own board: show everything with per-ship characters
-	ownBoard := make([][]string, boardSize)
+	// Own board: compress each row to a single string
+	ownBoard := make([]string, boardSize)
 	for r := range boardSize {
-		ownBoard[r] = make([]string, boardSize)
+		row := make([]byte, boardSize)
 		for c := range boardSize {
 			switch pd.Board.Grid[r][c] {
 			case CellEmpty:
-				ownBoard[r][c] = "."
+				row[c] = '.'
 			case CellShip:
 				if ch, ok := shipChars[pd.Board.ShipMap[r][c]]; ok {
-					ownBoard[r][c] = ch
+					row[c] = ch[0]
 				} else {
-					ownBoard[r][c] = "S"
+					row[c] = 'S'
 				}
 			case CellHit:
-				ownBoard[r][c] = "H"
+				row[c] = 'H'
 			case CellMiss:
-				ownBoard[r][c] = "M"
+				row[c] = 'M'
 			}
 		}
+		ownBoard[r] = string(row)
 	}
 
-	// Opponent board: only show hits and misses
-	opponentBoard := make([][]string, boardSize)
+	// Opponent board: compress each row to a single string
+	opponentBoard := make([]string, boardSize)
 	for r := range boardSize {
-		opponentBoard[r] = make([]string, boardSize)
+		row := make([]byte, boardSize)
 		for c := range boardSize {
 			switch pd.ShotBoard[r][c] {
 			case CellHit:
-				opponentBoard[r][c] = "X"
+				row[c] = 'X'
 			case CellMiss:
-				opponentBoard[r][c] = "O"
+				row[c] = 'O'
 			default:
-				opponentBoard[r][c] = "."
+				row[c] = '.'
 			}
 		}
+		opponentBoard[r] = string(row)
 	}
 
 	// Ship status
@@ -219,33 +221,6 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		}
 	}
 
-	// Build action schemas based on available actions
-	actionSchemas := map[string]any{}
-	for _, a := range availableActions {
-		switch a {
-		case "place_ships":
-			actionSchemas["place_ships"] = map[string]any{
-				"description": "Place all 5 ships on your board. Ships must be horizontal or vertical, no overlaps.",
-				"data": map[string]any{
-					"ships": []map[string]any{
-						{"name": "carrier", "start": "A1", "end": "A5"},
-						{"name": "battleship", "start": "C3", "end": "F3"},
-						{"name": "cruiser", "start": "E7", "end": "E9"},
-						{"name": "submarine", "start": "H2", "end": "H4"},
-						{"name": "destroyer", "start": "J5", "end": "J6"},
-					},
-				},
-				"notes": "Names must be lowercase. Coordinates: column letter (A-J) + row number (1-10). Example: A1 is top-left, J10 is bottom-right.",
-			}
-		case "fire":
-			actionSchemas["fire"] = map[string]any{
-				"description": "Fire at a coordinate on opponent's board.",
-				"data":        map[string]any{"target": "B3"},
-				"notes":       "Coordinate: column letter (A-J) + row number (1-10). Cannot fire at same cell twice.",
-			}
-		}
-	}
-
 	return &engines.PlayerView{
 		Phase:            state.Phase,
 		YourTurn:         yourTurn,
@@ -257,9 +232,8 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		AvailableActions: availableActions,
 		TurnNumber:       state.TurnNumber,
 		GameSpecific: map[string]any{
-			"ships":          shipStatus,
-			"board_size":     boardSize,
-			"action_schemas": actionSchemas,
+			"ships":      shipStatus,
+			"board_size": boardSize,
 		},
 	}
 }

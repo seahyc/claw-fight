@@ -21,7 +21,7 @@
         'O': { cls: 'miss', sym: '\u2022', label: 'Miss' }
     };
 
-    function buildGrid(board, label) {
+    function buildGrid(board, label, lastAction, sunkInfo) {
         var wrapper = document.createElement('div');
         wrapper.className = 'battleship-board';
 
@@ -62,6 +62,9 @@
                 }
                 var info = CELL_MAP[val] || CELL_MAP['.'];
                 cell.className = 'battleship-cell ' + info.cls;
+                if (lastAction && lastAction.target === key) {
+                    cell.className += ' last-shot';
+                }
                 cell.dataset.coord = key;
                 cell.title = key + ' - ' + info.label;
                 if (info.sym) cell.textContent = info.sym;
@@ -70,6 +73,14 @@
         }
 
         wrapper.appendChild(grid);
+
+        if (sunkInfo) {
+            var sunkCounter = document.createElement('div');
+            sunkCounter.className = 'battleship-sunk-counter';
+            sunkCounter.innerHTML = 'Ships sunk: <span class="sunk-count">' + (sunkInfo.sunk || 0) + '/5</span>';
+            wrapper.appendChild(sunkCounter);
+        }
+
         return wrapper;
     }
 
@@ -112,19 +123,20 @@
         var p1Board = null;
         var p2Board = null;
 
-        // state is player_views map: player_id -> PlayerView
-        var keys = Object.keys(state);
+        // state.views is player_views map: player_id -> PlayerView
+        var views = state.views || state;
+        var keys = Object.keys(views).filter(function(k) { return k !== 'last_action' && k !== 'ship_status' && k !== 'views'; });
         if (keys.length >= 2) {
-            var v1 = state[keys[0]];
-            var v2 = state[keys[1]];
+            var v1 = views[keys[0]];
+            var v2 = views[keys[1]];
             p1Board = v1 && v1.board ? v1.board.own : null;
             p2Board = v2 && v2.board ? v2.board.own : null;
         } else if (keys.length === 1) {
-            var v = state[keys[0]];
+            var v = views[keys[0]];
             p1Board = v && v.board ? v.board.own : null;
         }
 
-        if (state[keys[0]] && state[keys[0]].phase === 'setup') {
+        if (views[keys[0]] && views[keys[0]].phase === 'setup') {
             var overlay = document.createElement('div');
             overlay.className = 'phase-banner';
             overlay.textContent = '\u2693 Ship Placement Phase \u2693';
@@ -133,10 +145,16 @@
 
         boardEl.appendChild(buildLegend());
 
+        var lastAction = state.last_action || null;
+        var shipStatus = state.ship_status || {};
+        var playerKeys = Object.keys(shipStatus);
+        var p1Sunk = playerKeys.length >= 1 ? shipStatus[playerKeys[0]] : null;
+        var p2Sunk = playerKeys.length >= 2 ? shipStatus[playerKeys[1]] : null;
+
         var boardsRow = document.createElement('div');
         boardsRow.className = 'boards-row';
-        boardsRow.appendChild(buildGrid(p1Board, p1Name));
-        boardsRow.appendChild(buildGrid(p2Board, p2Name));
+        boardsRow.appendChild(buildGrid(p1Board, p1Name, lastAction, p1Sunk));
+        boardsRow.appendChild(buildGrid(p2Board, p2Name, lastAction, p2Sunk));
         boardEl.appendChild(boardsRow);
     };
 })();
