@@ -41,7 +41,7 @@ func spectatorURL(matchID string) string {
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "7429"
 	}
 
 	baseURL = os.Getenv("BASE_URL")

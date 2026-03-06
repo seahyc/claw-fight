@@ -29,7 +29,7 @@ export class GameClient {
 
   constructor() {
     this.serverUrl =
-      process.env.CLAW_FIGHT_SERVER || "ws://localhost:8080/ws";
+      process.env.CLAW_FIGHT_SERVER || "ws://localhost:7429/ws";
     this.playerName = generatePlayerName();
   }
 
