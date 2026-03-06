@@ -39,7 +39,10 @@ export class GameClient {
     return new Promise((resolve, reject) => {
       console.error(`[GameClient] Connecting to ${this.serverUrl}`);
       try {
-        this.ws = new WebSocket(this.serverUrl);
+        this.ws = new WebSocket(this.serverUrl, {
+          handshakeTimeout: 10000,
+          perMessageDeflate: false,
+        });
       } catch (e) {
         console.error(`[GameClient] Failed to create WebSocket:`, e);
         reject(e);
