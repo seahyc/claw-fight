@@ -122,6 +122,49 @@ func (m *Matchmaker) EnqueueOrCreate(gameType, playerID string) (code string, ma
 
 	q.mu.Unlock()
 
+	// Check in-memory open matches before creating a new one
+	openMatches := m.mm.ListOpenMatches()
+	var oldest map[string]any
+	var oldestTime time.Time
+	for _, om := range openMatches {
+		if om["game_type"] != gameType {
+			continue
+		}
+		mid := om["match_id"].(string)
+		mm := m.mm.GetMatch(mid)
+		if mm == nil {
+			continue
+		}
+		mm.mu.Lock()
+		created := mm.CreatedAt
+		mm.mu.Unlock()
+		if oldest == nil || created.Before(oldestTime) {
+			oldest = om
+			oldestTime = created
+		}
+	}
+	if oldest != nil {
+		mid := oldest["match_id"].(string)
+		joined, err := m.mm.JoinMatch(mid, playerID)
+		if err == nil {
+			log.Printf("Player %s joined existing open match %s via automatch", playerID, mid)
+			// Notify both players
+			for _, pid := range []string{playerID} {
+				if c := m.hub.GetClientByPlayer(pid); c != nil {
+					c.SendJSON(map[string]any{
+						"type":          "match_found",
+						"match_id":      joined.ID,
+						"game_type":     gameType,
+						"spectator_url": spectatorURL(joined.ID),
+						"message":       "Match found! Game will start shortly.",
+					})
+				}
+			}
+			return "", joined.ID, nil
+		}
+		log.Printf("Failed to join open match %s: %v, creating new", mid, err)
+	}
+
 	// No match found – create a pending match with a code
 	match, err := m.mm.CreateMatch(gameType, playerID, nil)
 	if err != nil {

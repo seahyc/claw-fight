@@ -57,6 +57,10 @@ func main() {
 	}
 	defer db.Close()
 
+	if err := db.CleanupStaleMatches(); err != nil {
+		log.Printf("Warning: failed to cleanup stale matches: %v", err)
+	}
+
 	hub := NewHub()
 	go hub.Run()
 
@@ -102,6 +106,20 @@ func main() {
 	mux.HandleFunc("POST /api/tournament", srv.handleAPICreateTournament)
 	mux.HandleFunc("POST /api/tournament/{id}/register", srv.handleAPITournamentRegister)
 	mux.HandleFunc("POST /api/tournament/{id}/start", srv.handleAPITournamentStart)
+
+	// REST API for game operations
+	mux.HandleFunc("POST /api/register", srv.handleAPIRegister)
+	mux.HandleFunc("POST /api/match", srv.handleAPICreateMatch)
+	mux.HandleFunc("POST /api/match/join", srv.handleAPIJoinMatch)
+	mux.HandleFunc("POST /api/match/find", srv.handleAPIFindMatch)
+	mux.HandleFunc("POST /api/match/{id}/action", srv.handleAPIMatchAction)
+	mux.HandleFunc("POST /api/match/{id}/ready", srv.handleAPIMatchReady)
+	mux.HandleFunc("POST /api/match/{id}/chat", srv.handleAPIMatchChat)
+	mux.HandleFunc("POST /api/match/{id}/quit", srv.handleAPIMatchQuit)
+	mux.HandleFunc("POST /api/match/{id}/end", srv.handleAPIMatchEnd)
+	mux.HandleFunc("GET /api/match/{id}/state", srv.handleAPIMatchState)
+	mux.HandleFunc("GET /api/game/{type}/rules", srv.handleAPIGameRules)
+	mux.HandleFunc("GET /api/matches/open", srv.handleAPIOpenMatches)
 
 	// API
 	mux.HandleFunc("GET /api/matches", srv.handleAPIMatches)
@@ -339,6 +357,10 @@ func (s *Server) handleClientMessage(client *Client, raw []byte) {
 		s.handleListen(client, msg)
 	case "chat":
 		s.handleChat(client, msg)
+	case "quit_match":
+		s.handleQuitMatch(client, msg)
+	case "end_match":
+		s.handleEndMatch(client, msg)
 	default:
 		client.SendJSON(map[string]any{"type": "error", "message": fmt.Sprintf("unknown message type: %s", msg.Type)})
 	}
@@ -786,6 +808,58 @@ func (s *Server) handleChat(client *Client, msg WSMessage) {
 	s.db.RecordEvent(matchID, seq, client.playerID, "chat", msg.Message, nil)
 
 	client.SendJSON(map[string]any{"type": "chat_sent"})
+}
+
+func (s *Server) handleQuitMatch(client *Client, msg WSMessage) {
+	if client.playerID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		return
+	}
+	matchID := msg.MatchID
+	if matchID == "" {
+		matchID = client.matchID
+	}
+	if matchID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "no match specified"})
+		return
+	}
+
+	if err := s.matchMgr.QuitMatch(matchID, client.playerID); err != nil {
+		client.SendJSON(map[string]any{"type": "error", "message": err.Error()})
+		return
+	}
+
+	client.matchID = ""
+	client.SendJSON(map[string]any{
+		"type":     "match_quit",
+		"match_id": matchID,
+	})
+}
+
+func (s *Server) handleEndMatch(client *Client, msg WSMessage) {
+	if client.playerID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		return
+	}
+	matchID := msg.MatchID
+	if matchID == "" {
+		matchID = client.matchID
+	}
+	if matchID == "" {
+		client.SendJSON(map[string]any{"type": "error", "message": "no match specified"})
+		return
+	}
+
+	if err := s.matchMgr.EndMatch(matchID, client.playerID); err != nil {
+		client.SendJSON(map[string]any{"type": "error", "message": err.Error()})
+		return
+	}
+
+	client.matchID = ""
+	client.SendJSON(map[string]any{
+		"type":     "match_ended",
+		"match_id": matchID,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

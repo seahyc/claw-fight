@@ -167,6 +167,36 @@ export const toolDefinitions: ToolDef[] = [
       required: [],
     },
   },
+  {
+    name: "quit_match",
+    description:
+      "Leave a match. The match stays open so another player can take your slot. Use when you want to hand off a match or joined by mistake.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        match_id: {
+          type: "string",
+          description: "The match ID to leave",
+        },
+      },
+      required: ["match_id"],
+    },
+  },
+  {
+    name: "end_match",
+    description:
+      "Close a match entirely so no one can join. Only a player in the match can end it.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        match_id: {
+          type: "string",
+          description: "The match ID to end",
+        },
+      },
+      required: ["match_id"],
+    },
+  },
 ];
 
 export async function handleToolCall(
@@ -185,57 +215,39 @@ export async function handleToolCall(
 
         // Re-register with name if provided
         if (playerName) {
-          await client.register(playerName);
+          await client.fetchApi("POST", "/api/register", { player_name: playerName });
         }
-
-        let matchId: string;
-        let spectatorUrl: string;
 
         if (code) {
           // Join specific match by code
-          client.send({ type: "join_match", code });
-          const joined = await client.waitForMessage("match_joined", 15000);
-          matchId = joined.match_id;
-          spectatorUrl = joined.spectator_url;
+          const res = await client.fetchApi("POST", "/api/match/join", { code, player_id: client.getPlayerId() });
+          // Signal ready
+          await client.fetchApi("POST", `/api/match/${res.match_id}/ready`, { player_id: client.getPlayerId() });
+          return text({ match_id: res.match_id, spectator_url: res.spectator_url, status: "matched" });
         } else {
-          // Smart flow: find_match - server pairs immediately or creates a pending match with code
-          client.send({ type: "find_match", game_type: gameType });
-
-          const response = await client.waitForMessageAny(["match_found", "match_queued"], 15000);
-          matchId = response.match_id;
-          spectatorUrl = response.spectator_url || `/match/${matchId}`;
-
-          if (response.type === "match_queued") {
-            // No opponent yet - return immediately with code to share
+          // Automatch
+          const res = await client.fetchApi("POST", "/api/match/find", { game_type: gameType, player_id: client.getPlayerId() });
+          if (res.status === "waiting") {
             return text({
-              match_id: matchId,
-              spectator_url: spectatorUrl,
+              match_id: res.match_id,
+              spectator_url: res.spectator_url,
               status: "waiting",
-              code: response.code,
-              instructions: `No opponent found yet. IMPORTANT: Share the join code "${response.code}" with your opponent (via chat, hotline, or other means) so they can join with: play(game_type="${gameType}", code="${response.code}"). Then call listen() to wait for them to join.`,
+              code: res.code,
+              instructions: `No opponent found yet. IMPORTANT: Share the join code "${res.code}" with your opponent (via chat, hotline, or other means) so they can join with: play(game_type="${gameType}", code="${res.code}"). Then call listen() to wait for them to join.`,
             });
           }
+          // Matched - signal ready
+          await client.fetchApi("POST", `/api/match/${res.match_id}/ready`, { player_id: client.getPlayerId() });
+          return text({ match_id: res.match_id, spectator_url: res.spectator_url, status: "matched" });
         }
-
-        // Signal ready
-        client.send({ type: "ready", match_id: matchId });
-
-        return text({
-          match_id: matchId,
-          spectator_url: spectatorUrl,
-          status: "matched",
-        });
       }
 
       case "perform_action": {
-        client.send({
-          type: "action",
-          match_id: args.match_id,
+        const response = await client.fetchApi("POST", `/api/match/${args.match_id}/action`, {
+          player_id: client.getPlayerId(),
           action_type: args.action_type,
           action_data: args.action_data || {},
         });
-
-        const response = await client.waitForMessage("action_result", 30000);
 
         if (!response.success) {
           return {
@@ -278,67 +290,58 @@ export async function handleToolCall(
       }
 
       case "chat": {
-        client.send({
-          type: "chat",
-          match_id: args.match_id,
+        await client.fetchApi("POST", `/api/match/${args.match_id}/chat`, {
+          player_id: client.getPlayerId(),
           message: args.message,
           scope: args.scope,
         });
-
-        await client.waitForMessage("chat_sent", 10000);
         return text({ sent: true });
       }
 
       case "get_rules": {
         if (args.game_type) {
-          client.send({ type: "get_rules", game_type: args.game_type });
-          const response = await client.waitForMessage("rules", 10000);
-          return text({ game_type: response.game_type, rules: response.rules });
+          const res = await client.fetchApi("GET", `/api/game/${args.game_type}/rules`);
+          return text(res);
         } else {
-          client.send({ type: "list_games" });
-          const response = await client.waitForMessage("games_list", 10000);
-          return text({ games: response.games });
+          const res = await client.fetchApi("GET", "/api/games");
+          return text({ games: res });
         }
       }
 
       case "list_matches": {
-        client.send({ type: "list_games" });
-        const response = await client.waitForMessage("games_list", 10000);
-        return text({ open_matches: response.open_matches });
+        const res = await client.fetchApi("GET", "/api/matches/open");
+        return text({ open_matches: res });
       }
 
       case "get_game_state": {
-        client.send({ type: "get_state", match_id: args.match_id });
-        const response = await client.waitForMessage("game_state", 10000);
-        return text({
-          phase: response.phase,
-          your_turn: response.your_turn,
-          simultaneous: response.simultaneous,
-          board: response.board,
-          available_actions: response.available_actions,
-          turn_number: response.turn_number,
-          game_specific: response.game_specific,
-        });
+        const res = await client.fetchApi("GET", `/api/match/${args.match_id}/state?player_id=${client.getPlayerId()}`);
+        return text(res);
       }
 
       case "create_match": {
         if (args.name) {
-          await client.register(args.name);
+          await client.fetchApi("POST", "/api/register", { player_name: args.name });
         }
-        client.send({
-          type: "create_match",
+        const res = await client.fetchApi("POST", "/api/match", {
           game_type: args.game_type,
+          player_id: client.getPlayerId(),
         });
-        const response = await client.waitForMessage("match_created", 10000);
         return text({
-          match_id: response.match_id,
-          code: response.code,
-          spectator_url: response.spectator_url,
-          message:
-            "Match created. Share the code with your opponent. They join with: play(game_type, code='" +
-            response.code +
-            "')",
+          match_id: res.match_id,
+          code: res.code,
+          spectator_url: res.spectator_url,
+          message: `Match created. Share code '${res.code}' with your opponent. They join with: play(game_type="${args.game_type}", code="${res.code}")`,
         });
+      }
+
+      case "quit_match": {
+        await client.fetchApi("POST", `/api/match/${args.match_id}/quit`, { player_id: client.getPlayerId() });
+        return text({ success: true, match_id: args.match_id });
+      }
+
+      case "end_match": {
+        await client.fetchApi("POST", `/api/match/${args.match_id}/end`, { player_id: client.getPlayerId() });
+        return text({ success: true, match_id: args.match_id });
       }
 
       default:

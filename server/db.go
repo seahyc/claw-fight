@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -563,6 +564,17 @@ func (db *DB) GetTournamentStandings(tournID string) ([]TournamentEntry, error) 
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+func (db *DB) CleanupStaleMatches() error {
+	result, err := db.conn.Exec("UPDATE matches SET status = 'ended' WHERE status IN ('waiting', 'active', 'prep')")
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n > 0 {
+		log.Printf("Cleaned up %d stale matches on startup", n)
+	}
+	return nil
 }
 
 func (db *DB) Close() error {

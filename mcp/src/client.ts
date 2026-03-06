@@ -23,6 +23,7 @@ interface PendingWaiter {
 export class GameClient {
   private ws: WebSocket | null = null;
   private serverUrl: string;
+  private apiUrl: string;
   private playerName: string;
   private playerId: string | null = null;
   private handlers: Array<(msg: WSMessage) => void> = [];
@@ -34,7 +35,30 @@ export class GameClient {
 
   constructor() {
     this.serverUrl = "ws://localhost:7429/ws";
+    this.apiUrl = this.getApiUrl();
     this.playerName = generatePlayerName();
+  }
+
+  private getApiUrl(): string {
+    const wsUrl = this.serverUrl;
+    return wsUrl.replace(/^ws/, "http").replace(/\/ws$/, "");
+  }
+
+  async fetchApi(method: string, path: string, body?: any): Promise<any> {
+    const url = `${this.apiUrl}${path}`;
+    const options: RequestInit = {
+      method,
+      headers: { "Content-Type": "application/json" },
+    };
+    if (body !== undefined) {
+      options.body = JSON.stringify(body);
+    }
+    const res = await fetch(url, options);
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`API ${method} ${path} failed (${res.status}): ${text}`);
+    }
+    return text ? JSON.parse(text) : {};
   }
 
   async connect(): Promise<void> {

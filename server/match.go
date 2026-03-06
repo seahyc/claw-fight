@@ -1023,6 +1023,121 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 	}, nil
 }
 
+// QuitMatch removes a player from a match, resetting it to waiting state.
+// The match stays open for a new player to join with the same code.
+func (mm *MatchManager) QuitMatch(matchID, playerID string) error {
+	mm.mu.RLock()
+	m, ok := mm.matches[matchID]
+	mm.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("match not found: %s", matchID)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	idx := slices.Index(m.Players, playerID)
+	if idx == -1 {
+		return fmt.Errorf("you are not in this match")
+	}
+
+	if m.Status == StatusFinished {
+		return fmt.Errorf("match is already finished")
+	}
+
+	// Stop any running timers
+	if m.TurnTimer != nil {
+		m.TurnTimer.Stop()
+	}
+	if m.PrepTimer != nil {
+		m.PrepTimer.Stop()
+	}
+
+	// Remove the player
+	m.Players = slices.Delete(m.Players, idx, idx+1)
+	m.State = nil
+	m.Status = StatusWaiting
+	m.ReadyPlayers = make(map[string]bool)
+	m.ForfeitCount = make(map[string]int)
+	m.CurrentTurn = ""
+
+	mm.db.UpdateMatchStatus(m.ID, "waiting")
+
+	// Notify remaining players that opponent left
+	for _, pid := range m.Players {
+		if c := mm.hub.GetClientByPlayer(pid); c != nil {
+			c.QueueEvent(map[string]any{
+				"type":     "opponent_left",
+				"match_id": m.ID,
+				"message":  "Your opponent has left the match. Waiting for a new player.",
+			})
+		}
+	}
+
+	log.Printf("Player %s quit match %s", playerID, matchID)
+	return nil
+}
+
+// EndMatch closes a match entirely. Only the creator (first player) can end it.
+func (mm *MatchManager) EndMatch(matchID, playerID string) error {
+	mm.mu.RLock()
+	m, ok := mm.matches[matchID]
+	mm.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("match not found: %s", matchID)
+	}
+
+	m.mu.Lock()
+
+	if m.Status == StatusFinished {
+		m.mu.Unlock()
+		return fmt.Errorf("match is already finished")
+	}
+
+	// Check if caller is in the match (creator may have been index 0 originally,
+	// but after quits the Players slice changes - allow any current player to end)
+	if !slices.Contains(m.Players, playerID) {
+		m.mu.Unlock()
+		return fmt.Errorf("you are not in this match")
+	}
+
+	// Stop any running timers
+	if m.TurnTimer != nil {
+		m.TurnTimer.Stop()
+	}
+	if m.PrepTimer != nil {
+		m.PrepTimer.Stop()
+	}
+
+	// Notify all connected players
+	for _, pid := range m.Players {
+		if pid != playerID {
+			if c := mm.hub.GetClientByPlayer(pid); c != nil {
+				c.QueueEvent(map[string]any{
+					"type":     "match_ended",
+					"match_id": m.ID,
+					"message":  "The match has been ended.",
+				})
+			}
+		}
+	}
+
+	m.Status = StatusFinished
+	m.EndedAt = time.Now()
+	m.mu.Unlock()
+
+	// Cleanup from manager maps
+	mm.mu.Lock()
+	delete(mm.byCode, m.ChallengeCode)
+	delete(mm.matches, m.ID)
+	mm.mu.Unlock()
+
+	mm.db.UpdateMatchStatus(m.ID, "ended")
+
+	log.Printf("Match %s ended by player %s", matchID, playerID)
+	return nil
+}
+
 // MarshalAction parses an action from a raw JSON message
 func MarshalAction(data json.RawMessage) (engines.Action, error) {
 	var action engines.Action
