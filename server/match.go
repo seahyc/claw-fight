@@ -721,7 +721,7 @@ func (mm *MatchManager) buildPrisonersSpectatorState(m *Match) map[string]any {
 		scoreHistory = append(scoreHistory, []int{cumP1, cumP2})
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"current_round":    m.State.TurnNumber + 1,
 		"total_rounds":     totalRounds,
 		"scores":           scoreArr,
@@ -729,6 +729,43 @@ func (mm *MatchManager) buildPrisonersSpectatorState(m *Match) map[string]any {
 		"moves":            moves,
 		"score_history":    scoreHistory,
 	}
+
+	// Chaos event for current round
+	if events, ok := data["events"].(map[string]any); ok {
+		roundKey := fmt.Sprintf("%d", m.State.TurnNumber)
+		if event, ok := events[roundKey]; ok {
+			result["current_event"] = event
+		}
+	}
+
+	// Secret objectives (spectators see both)
+	if objectives, ok := data["secret_objectives"].(map[string]any); ok {
+		spectatorObjs := make([]map[string]any, 2)
+		for i, pid := range []string{p1, p2} {
+			if obj, ok := objectives[pid].(map[string]any); ok {
+				spectatorObjs[i] = map[string]any{
+					"name":        obj["name"],
+					"description": obj["description"],
+				}
+			} else {
+				spectatorObjs[i] = map[string]any{}
+			}
+		}
+		result["secret_objectives"] = spectatorObjs
+	}
+
+	// Danger zone status
+	if dangerZone, ok := data["danger_zone"].(map[string]any); ok {
+		dzStatus := make([]bool, 2)
+		for i, pid := range []string{p1, p2} {
+			if dz, ok := dangerZone[pid].(map[string]any); ok {
+				dzStatus[i], _ = dz["active"].(bool)
+			}
+		}
+		result["danger_zone"] = dzStatus
+	}
+
+	return result
 }
 
 func toInt(v any) int {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"html/template"
 	"log"
 	"net/http"
@@ -342,12 +344,34 @@ func (s *Server) handleClientMessage(client *Client, raw []byte) {
 	}
 }
 
+var (
+	boringNamePrefixes = []string{"claude", "agent", "assistant", "bot", "ai", "model", "llm", "chatbot"}
+	funAdjectives      = []string{"CHROME", "NEON", "SHADOW", "IRON", "PIXEL", "COSMIC", "TURBO", "HYPER", "CYBER", "QUANTUM", "THUNDER", "STEALTH", "BLAZING", "ROGUE", "PHANTOM"}
+	funNouns           = []string{"VIPER", "GHOST", "FALCON", "WOLF", "PHOENIX", "DRAGON", "TIGER", "COBRA", "HAWK", "LYNX", "RAPTOR", "STORM", "BLADE", "FANG", "SPARK"}
+)
+
+func isBoringName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, prefix := range boringNamePrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func generateFunName() string {
+	ai, _ := rand.Int(rand.Reader, big.NewInt(int64(len(funAdjectives))))
+	ni, _ := rand.Int(rand.Reader, big.NewInt(int64(len(funNouns))))
+	return funAdjectives[ai.Int64()] + "_" + funNouns[ni.Int64()]
+}
+
 func (s *Server) handleRegister(client *Client, msg WSMessage) {
 	if msg.PlayerID == "" {
 		msg.PlayerID = generateID(12)
 	}
-	if msg.PlayerName == "" {
-		msg.PlayerName = "Agent-" + msg.PlayerID[:6]
+	if msg.PlayerName == "" || isBoringName(msg.PlayerName) {
+		msg.PlayerName = generateFunName()
 	}
 
 	s.hub.RegisterPlayer(client, msg.PlayerID)

@@ -1802,3 +1802,60 @@ a:hover {
     color: var(--red);
     font-weight: bold;
 }
+
+/* PD Chaos Event Banner */
+.prisoners-event-banner {
+    text-align: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.8rem;
+    color: var(--gold);
+    padding: 10px;
+    margin: 8px 0;
+    background: rgba(255, 215, 0, 0.1);
+    border: var(--border-w) solid var(--gold-dim);
+    text-shadow: 2px 2px 0 var(--text-shadow);
+    animation: event-pulse 2s ease-in-out infinite;
+}
+
+@keyframes event-pulse {
+    0%, 100% { border-color: var(--gold-dim); }
+    50% { border-color: var(--gold); box-shadow: 0 0 12px rgba(255, 215, 0, 0.3); }
+}
+
+/* PD Danger Zone */
+.prisoners-player-score.danger-zone {
+    border-color: var(--red) !important;
+    animation: danger-flash 1s ease-in-out infinite;
+}
+
+@keyframes danger-flash {
+    0%, 100% { box-shadow: 0 0 8px rgba(232, 64, 64, 0.3); }
+    50% { box-shadow: 0 0 16px rgba(232, 64, 64, 0.6); }
+}
+
+/* PD Secret Objectives */
+.prisoners-objectives {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin: 8px 0;
+    flex-wrap: wrap;
+}
+
+.prisoners-objective {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+}
+
+.obj-name {
+    color: var(--cyan);
+    font-weight: bold;
+}
+
+.obj-player {
+    color: var(--text);
+}

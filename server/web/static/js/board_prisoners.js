@@ -66,6 +66,14 @@
         roundInfo.innerHTML = 'Round <strong>' + (state.current_round || 0) + '</strong> / ' + (state.total_rounds || '?');
         container.appendChild(roundInfo);
 
+        // Chaos event banner
+        if (state.current_event) {
+            var eventBanner = document.createElement('div');
+            eventBanner.className = 'prisoners-event-banner';
+            eventBanner.textContent = state.current_event.description || state.current_event.type || 'CHAOS EVENT';
+            container.appendChild(eventBanner);
+        }
+
         // Scores
         var scores = document.createElement('div');
         scores.className = 'prisoners-scores';
@@ -86,7 +94,30 @@
             (p2CoopRate !== null ? '<div class="coop-rate">Cooperation: ' + Math.round(p2CoopRate * 100) + '%</div>' : '');
         scores.appendChild(p2Score);
 
+        // Danger zone visual
+        if (state.danger_zone && state.danger_zone[0]) p1Score.className += ' danger-zone';
+        if (state.danger_zone && state.danger_zone[1]) p2Score.className += ' danger-zone';
+
         container.appendChild(scores);
+
+        // Secret objectives
+        if (state.secret_objectives && state.secret_objectives.length === 2) {
+            var objSection = document.createElement('div');
+            objSection.className = 'prisoners-objectives';
+            var objNames = [p1Name, p2Name];
+            for (var oi = 0; oi < 2; oi++) {
+                var obj = state.secret_objectives[oi];
+                if (obj && obj.name) {
+                    var objEl = document.createElement('div');
+                    objEl.className = 'prisoners-objective';
+                    objEl.innerHTML = '<span class="obj-player">' + objNames[oi] + '</span>: ' +
+                        '<span class="obj-name">' + obj.name + '</span> - ' +
+                        '<span class="obj-desc">' + (obj.description || '') + '</span>';
+                    objSection.appendChild(objEl);
+                }
+            }
+            container.appendChild(objSection);
+        }
 
         // Score chart
         if (state.score_history && state.score_history.length > 1) {
