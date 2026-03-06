@@ -33,8 +33,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args = {} } = request.params;
   const progressToken = request.params._meta?.progressToken;
-  const gameClient = await getClient();
-  return handleToolCall(server, gameClient, name, args, progressToken);
+  try {
+    const gameClient = await getClient();
+    return handleToolCall(server, gameClient, name, args, progressToken);
+  } catch (err) {
+    console.error(`[MCP] Tool call failed:`, err);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      content: [{ type: "text", text: `Error initializing client: ${message}` }],
+      isError: true,
+    };
+  }
 });
 
 async function main() {
