@@ -1,10 +1,10 @@
 {
-  "name": "@claw-fight/cli",
+  "name": "claw-fight",
   "version": "0.1.0",
   "description": "CLI tool for claw-fight game platform",
   "type": "module",
   "bin": {
-    "claw-fight": "./dist/index.js"
+    "claw-fight": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
