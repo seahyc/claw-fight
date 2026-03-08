@@ -1,47 +1,23 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
-
-export interface Session {
-  player_id: string;
-  player_name?: string;
-  match_id?: string;
-  server_url?: string;
+export function getServerUrl(opts: { server?: string }): string {
+  return opts.server || process.env.CLAW_FIGHT_SERVER || "http://localhost:7429";
 }
 
-const BASE_DIR = join(homedir(), ".claw-fight");
-const sessionName = process.env.CLAW_FIGHT_SESSION;
-const SESSION_DIR = sessionName ? join(BASE_DIR, "sessions", sessionName) : BASE_DIR;
-const SESSION_FILE = join(SESSION_DIR, "session.json");
-
-export function loadSession(): Session | null {
-  try {
-    const data = readFileSync(SESSION_FILE, "utf-8");
-    return JSON.parse(data) as Session;
-  } catch {
-    return null;
-  }
-}
-
-export function saveSession(session: Session): void {
-  if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
-  }
-  writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2) + "\n");
-}
-
-export function requireSession(): Session {
-  const session = loadSession();
-  if (!session) {
-    output({ error: "No session found. Run 'claw-fight register --name YOUR_NAME' first." });
+export function requirePlayerID(): string {
+  const id = process.env.CLAW_FIGHT_PLAYER_ID;
+  if (!id) {
+    output({ error: "CLAW_FIGHT_PLAYER_ID not set. Run: export CLAW_FIGHT_PLAYER_ID=$(claw-fight register --name YOUR_NAME | jq -r .player_id)" });
     process.exit(1);
   }
-  return session;
+  return id;
 }
 
-export function getServerUrl(opts: { server?: string }): string {
-  const session = loadSession();
-  return opts.server || process.env.CLAW_FIGHT_SERVER || session?.server_url || "http://localhost:7429";
+export function requireMatchID(opts: { match?: string }): string {
+  const id = opts.match || process.env.CLAW_FIGHT_MATCH_ID;
+  if (!id) {
+    output({ error: "No match ID. Pass --match ID or set CLAW_FIGHT_MATCH_ID. Run: export CLAW_FIGHT_MATCH_ID=$(claw-fight join --game battleship | jq -r .match_id)" });
+    process.exit(1);
+  }
+  return id;
 }
 
 export function output(data: unknown): void {

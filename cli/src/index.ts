@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { fetchApi } from "./api.js";
-import { loadSession, saveSession, requireSession, getServerUrl, output, sanitizeEvent } from "./session.js";
+import { getServerUrl, requirePlayerID, requireMatchID, output, sanitizeEvent } from "./session.js";
 import WebSocket from "ws";
 
 const program = new Command();
@@ -14,7 +14,7 @@ program
 
 program
   .command("register")
-  .description("Register a player and store session")
+  .description("Register a player and print player_id")
   .requiredOption("--name <name>", "Player name")
   .action(async (opts) => {
     const serverUrl = getServerUrl(program.opts());
@@ -22,12 +22,11 @@ program
       const res = await fetchApi(serverUrl, "POST", "/api/register", {
         player_name: opts.name,
       }) as { player_id: string; player_name: string };
-      saveSession({
+      output({
         player_id: res.player_id,
         player_name: res.player_name,
-        server_url: serverUrl,
+        next_step: `export CLAW_FIGHT_PLAYER_ID=${res.player_id}`,
       });
-      output({ player_id: res.player_id, player_name: res.player_name, session_saved: true });
     } catch (err) {
       output({ error: err instanceof Error ? err.message : String(err) });
       process.exit(1);
@@ -41,49 +40,45 @@ program
   .option("--code <code>", "Challenge code to join a specific match")
   .option("--create", "Create a new private match and print the challenge code (don't auto-matchmake)")
   .action(async (opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
     try {
       let res: any;
       if (opts.create) {
         res = await fetchApi(serverUrl, "POST", "/api/match", {
           game_type: opts.game,
-          player_id: session.player_id,
+          player_id: playerID,
         });
         res.action = "created";
         res.status = "waiting";
-        res.next_step = `Share code ${res.code} with your opponent. Then run: claw-fight listen --timeout 300`;
+        res.next_step = `export CLAW_FIGHT_MATCH_ID=${res.match_id} # then share code ${res.code} with your opponent`;
       } else if (opts.code) {
         res = await fetchApi(serverUrl, "POST", "/api/match/join", {
           code: opts.code,
-          player_id: session.player_id,
+          player_id: playerID,
         });
-        // Signal ready
         await fetchApi(serverUrl, "POST", `/api/match/${res.match_id}/ready`, {
-          player_id: session.player_id,
+          player_id: playerID,
         });
         res.action = "joined";
         res.status = "matched";
-        res.next_step = "Opponent matched! Run: claw-fight listen --timeout 300";
+        res.next_step = `export CLAW_FIGHT_MATCH_ID=${res.match_id}`;
       } else {
         res = await fetchApi(serverUrl, "POST", "/api/match/find", {
           game_type: opts.game,
-          player_id: session.player_id,
+          player_id: playerID,
         });
         if (res.status === "matched") {
           await fetchApi(serverUrl, "POST", `/api/match/${res.match_id}/ready`, {
-            player_id: session.player_id,
+            player_id: playerID,
           });
           res.action = "joined";
-          res.next_step = "Opponent matched! Run: claw-fight listen --timeout 300";
+          res.next_step = `export CLAW_FIGHT_MATCH_ID=${res.match_id}`;
         } else {
           res.action = "created";
-          res.next_step = `Waiting for opponent. Share code ${res.code} or run: claw-fight listen --timeout 300`;
+          res.next_step = `export CLAW_FIGHT_MATCH_ID=${res.match_id} # waiting for opponent, share code ${res.code}`;
         }
       }
-      // Update session with match_id
-      session.match_id = res.match_id;
-      saveSession(session);
       output(res);
     } catch (err) {
       output({ error: err instanceof Error ? err.message : String(err) });
@@ -94,17 +89,13 @@ program
 program
   .command("status")
   .description("Get current game state (non-blocking)")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
-    if (!matchId) {
-      output({ error: "No match ID. Join a match first or pass --match ID." });
-      process.exit(1);
-    }
+    const matchId = requireMatchID(opts);
     try {
-      const res = await fetchApi(serverUrl, "GET", `/api/match/${matchId}/state?player_id=${session.player_id}`);
+      const res = await fetchApi(serverUrl, "GET", `/api/match/${matchId}/state?player_id=${playerID}`);
       output(res);
     } catch (err) {
       output({ error: err instanceof Error ? err.message : String(err) });
@@ -116,19 +107,15 @@ program
   .command("action <type>")
   .description("Submit a move in the current match")
   .option("--data <json>", "Action data as JSON", "{}")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (actionType, opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
-    if (!matchId) {
-      output({ error: "No match ID. Join a match first or pass --match ID." });
-      process.exit(1);
-    }
+    const matchId = requireMatchID(opts);
     try {
       const actionData = JSON.parse(opts.data);
       const res = await fetchApi(serverUrl, "POST", `/api/match/${matchId}/action`, {
-        player_id: session.player_id,
+        player_id: playerID,
         action_type: actionType,
         action_data: actionData,
       });
@@ -143,11 +130,11 @@ program
   .command("listen")
   .description("Blocking wait for game events via WebSocket")
   .option("--timeout <seconds>", "Max seconds to wait", "300")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
+    const matchId = requireMatchID(opts);
     const timeout = Math.min(Math.max(parseInt(opts.timeout) || 300, 1), 300);
 
     const wsUrl = serverUrl.replace(/^http/, "ws") + "/ws";
@@ -166,18 +153,13 @@ program
       }, (timeout + 15) * 1000);
 
       ws.on("open", () => {
-        // Register with player_id
-        ws.send(JSON.stringify({ type: "register", player_id: session.player_id }));
+        ws.send(JSON.stringify({ type: "register", player_id: playerID }));
       });
-
-      let registered = false;
 
       ws.on("message", (data) => {
         const msg = JSON.parse(data.toString());
 
         if (msg.type === "registered") {
-          registered = true;
-          // Send listen request
           ws.send(JSON.stringify({
             type: "listen",
             match_id: matchId,
@@ -221,18 +203,14 @@ program
 program
   .command("chat <message>")
   .description("Send an in-game chat message")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (message, opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
-    if (!matchId) {
-      output({ error: "No match ID. Join a match first or pass --match ID." });
-      process.exit(1);
-    }
+    const matchId = requireMatchID(opts);
     try {
       const res = await fetchApi(serverUrl, "POST", `/api/match/${matchId}/chat`, {
-        player_id: session.player_id,
+        player_id: playerID,
         message,
       });
       output(res);
@@ -245,21 +223,15 @@ program
 program
   .command("quit")
   .description("Leave the current match")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
-    if (!matchId) {
-      output({ error: "No match ID." });
-      process.exit(1);
-    }
+    const matchId = requireMatchID(opts);
     try {
       const res = await fetchApi(serverUrl, "POST", `/api/match/${matchId}/quit`, {
-        player_id: session.player_id,
+        player_id: playerID,
       });
-      session.match_id = undefined;
-      saveSession(session);
       output(res);
     } catch (err) {
       output({ error: err instanceof Error ? err.message : String(err) });
@@ -270,21 +242,15 @@ program
 program
   .command("end")
   .description("End the current match entirely")
-  .option("--match <id>", "Match ID (uses session if omitted)")
+  .option("--match <id>", "Match ID (or set CLAW_FIGHT_MATCH_ID)")
   .action(async (opts) => {
-    const session = requireSession();
+    const playerID = requirePlayerID();
     const serverUrl = getServerUrl(program.opts());
-    const matchId = opts.match || session.match_id;
-    if (!matchId) {
-      output({ error: "No match ID." });
-      process.exit(1);
-    }
+    const matchId = requireMatchID(opts);
     try {
       const res = await fetchApi(serverUrl, "POST", `/api/match/${matchId}/end`, {
-        player_id: session.player_id,
+        player_id: playerID,
       });
-      session.match_id = undefined;
-      saveSession(session);
       output(res);
     } catch (err) {
       output({ error: err instanceof Error ? err.message : String(err) });
