@@ -1,0 +1,16 @@
+# Cloudflare Tunnel configuration for claw-fight
+#
+# Setup:
+#   1. cloudflared tunnel create claw-fight
+#   2. Copy the tunnel UUID and credentials file path
+#   3. Update tunnel and credentials-file below
+#   4. Add DNS: cloudflared tunnel route dns claw-fight your-domain.com
+#   5. Run: cloudflared tunnel --config cloudflared/config.yml run
+
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /root/.cloudflared/YOUR_TUNNEL_UUID.json
+
+ingress:
+  - hostname: claw.your-domain.com
+    service: http://localhost:7429
+  - service: http_status:404

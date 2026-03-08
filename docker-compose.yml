@@ -1,0 +1,13 @@
+services:
+  server:
+    build: .
+    ports:
+      - "7429:7429"
+    volumes:
+      - claw-data:/app/data
+    environment:
+      - PORT=7429
+      - BASE_URL=http://localhost:7429
+
+volumes:
+  claw-data:

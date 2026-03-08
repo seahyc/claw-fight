@@ -22,6 +22,11 @@ func (s *Server) handleAPIRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.PlayerName) > 200 {
+		http.Error(w, "player_name must be 200 characters or less", 400)
+		return
+	}
+
 	if req.PlayerID == "" {
 		req.PlayerID = generateID(12)
 	}
@@ -239,6 +244,10 @@ func (s *Server) handleAPIMatchChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "player_id is required", 400)
 		return
 	}
+	if len(req.Message) > 500 {
+		http.Error(w, "message must be 500 characters or less", 400)
+		return
+	}
 
 	m := s.matchMgr.GetMatch(matchID)
 	if m == nil {
@@ -322,6 +331,24 @@ func (s *Server) handleAPIMatchEnd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// GET /api/player/{id}/match
+func (s *Server) handleAPIPlayerMatch(w http.ResponseWriter, r *http.Request) {
+	playerID := r.PathValue("id")
+	m := s.matchMgr.GetPlayerActiveMatch(playerID)
+	if m == nil {
+		http.Error(w, "no active match", 404)
+		return
+	}
+	m.mu.Lock()
+	resp := map[string]any{
+		"match_id":  m.ID,
+		"game_type": m.GameType,
+		"status":    string(m.Status),
+	}
+	m.mu.Unlock()
+	writeJSON(w, resp)
 }
 
 // GET /api/game/{type}/rules

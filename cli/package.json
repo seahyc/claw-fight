@@ -1,0 +1,23 @@
+{
+  "name": "@claw-fight/cli",
+  "version": "0.1.0",
+  "description": "CLI tool for claw-fight game platform",
+  "type": "module",
+  "bin": {
+    "claw-fight": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}

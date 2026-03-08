@@ -1859,3 +1859,390 @@ a:hover {
 .obj-player {
     color: var(--text);
 }
+
+/* ========================================
+   Play UI
+   ======================================== */
+
+.play-landing {
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.play-panel {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-light),
+        3px 3px 0 rgba(0,0,0,0.3);
+    padding: 1.25rem;
+}
+
+.panel-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    color: var(--gold);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+}
+
+.play-form-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.pixel-input {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.8rem;
+    background: var(--panel-dark);
+    border: var(--border-w) solid var(--panel-border);
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    flex: 1;
+    outline: none;
+}
+
+.pixel-input:focus {
+    border-color: var(--gold);
+}
+
+.pixel-input::placeholder {
+    color: var(--text-muted);
+}
+
+.pixel-select {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.8rem;
+    background: var(--panel-dark);
+    border: var(--border-w) solid var(--panel-border);
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    flex: 1;
+    outline: none;
+    cursor: pointer;
+}
+
+.pixel-select:focus {
+    border-color: var(--gold);
+}
+
+.play-status {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    margin-top: 0.5rem;
+    color: var(--text-muted);
+}
+
+.play-status.success { color: var(--green); }
+.play-status.error { color: var(--red); }
+
+.btn-small {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    padding: 0.4rem 0.8rem;
+    background: var(--btn-purple);
+    border: var(--border-w) solid var(--btn-purple-light);
+    color: var(--white);
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--btn-purple-dark),
+        inset var(--border-w) var(--border-w) 0 var(--btn-purple-light);
+}
+
+.btn-small:hover { background: var(--btn-purple-light); }
+.btn-small:active { transform: translate(1px, 1px); }
+
+.btn-danger {
+    background: var(--red-dim);
+    border-color: var(--red);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 #801818,
+        inset var(--border-w) var(--border-w) 0 var(--red);
+}
+
+.btn-danger:hover { background: var(--red); }
+
+.btn-secondary {
+    background: var(--panel-light);
+    border-color: var(--panel-border);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 var(--panel-dark),
+        inset var(--border-w) var(--border-w) 0 var(--panel-border);
+}
+
+.btn-secondary:hover { background: var(--panel-border); }
+
+.open-matches-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.open-match-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--panel-dark);
+    border: 2px solid var(--panel-border);
+}
+
+.open-match-type {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.4rem;
+    color: var(--cyan);
+    text-transform: uppercase;
+    min-width: 80px;
+}
+
+.open-match-code {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    color: var(--gold);
+    letter-spacing: 2px;
+}
+
+.open-match-player {
+    flex: 1;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* Play Match UI */
+
+.play-match-container .chat-input-area {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-top: 2px solid var(--panel-border);
+    margin-top: auto;
+}
+
+.chat-input-area .pixel-input {
+    font-size: 0.65rem;
+    padding: 0.35rem 0.5rem;
+}
+
+/* Battleship setup */
+
+.play-battleship-setup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.setup-instructions {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    color: var(--text);
+    text-align: center;
+    line-height: 2;
+}
+
+.setup-cell {
+    cursor: pointer;
+}
+
+.setup-cell.hover-valid {
+    background: rgba(74, 222, 128, 0.4) !important;
+    outline: 2px solid var(--green);
+}
+
+.setup-cell.hover-invalid {
+    background: rgba(232, 64, 64, 0.4) !important;
+    outline: 2px solid var(--red);
+}
+
+.play-battleship-game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.battleship-cell.clickable {
+    cursor: crosshair;
+}
+
+.battleship-cell.clickable:hover {
+    background: rgba(255, 215, 0, 0.3);
+    outline: 2px solid var(--gold);
+}
+
+.battleship-cell.firing {
+    animation: pixel-hit 0.3s ease-out;
+}
+
+.phase-banner.your-turn {
+    background: var(--green);
+    color: var(--panel-dark);
+    animation: pulse 1s infinite;
+}
+
+.phase-banner.wait-turn {
+    background: var(--panel-light);
+    color: var(--text-muted);
+}
+
+/* Poker actions */
+
+.poker-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.poker-actions .btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+}
+
+.poker-raise-group {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.raise-input {
+    width: 80px;
+    font-size: 0.7rem !important;
+    padding: 0.35rem 0.5rem !important;
+}
+
+.poker-wait-banner {
+    text-align: center;
+    padding: 0.75rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.45rem;
+    color: var(--text-muted);
+}
+
+.poker-player.is-me {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
+}
+
+/* Prisoners actions */
+
+.prisoners-actions {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.prisoners-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem 2rem;
+    min-width: 140px;
+    font-family: 'Press Start 2P', monospace;
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.prisoners-btn:hover {
+    transform: translate(-2px, -2px);
+}
+
+.prisoners-btn:active {
+    transform: translate(1px, 1px);
+}
+
+.prisoners-btn-icon {
+    font-size: 2rem;
+}
+
+.prisoners-btn-label {
+    font-size: 0.5rem;
+}
+
+.cooperate-btn {
+    background: #1a3a1a;
+    border: var(--border-w) solid var(--green);
+    color: var(--green);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 #0a1a0a,
+        inset var(--border-w) var(--border-w) 0 #2a5a2a,
+        4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.cooperate-btn:hover {
+    background: #2a5a2a;
+}
+
+.defect-btn {
+    background: #3a1a1a;
+    border: var(--border-w) solid var(--red);
+    color: var(--red);
+    box-shadow:
+        inset calc(var(--border-w) * -1) calc(var(--border-w) * -1) 0 #1a0a0a,
+        inset var(--border-w) var(--border-w) 0 #5a2a2a,
+        4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.defect-btn:hover {
+    background: #5a2a2a;
+}
+
+.prisoners-history-section {
+    margin-top: 1rem;
+}
+
+.prisoners-history-table {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    justify-content: center;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.prisoners-history-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.4rem;
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+    font-size: 0.6rem;
+}
+
+.round-num {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.35rem;
+    color: var(--text-muted);
+    min-width: 24px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .prisoners-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    .prisoners-btn {
+        min-width: 200px;
+    }
+    .poker-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    .boards-row {
+        flex-direction: column !important;
+    }
+    .play-form-row {
+        flex-direction: column;
+    }
+}

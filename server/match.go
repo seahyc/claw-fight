@@ -17,6 +17,7 @@ const (
 	defaultTurnTimeout = 60 * time.Second
 	defaultPrepTime    = 5 * time.Second
 	maxForfeits        = 3
+	disconnectGrace    = 90 * time.Second
 )
 
 type MatchStatus string
@@ -49,6 +50,15 @@ type Match struct {
 	TurnTimer     *time.Timer
 	PrepTimer     *time.Timer
 	EventSeq      int
+
+	// Activity tracking
+	LastActivityAt time.Time // updated on every action or player join
+
+	// Disconnect grace period tracking
+	Disconnected   map[string]time.Time   // playerID -> disconnect time
+	GraceTimers    map[string]*time.Timer // playerID -> grace expiry timer
+	TurnPausedFor  string                 // playerID whose turn timer is paused due to disconnect
+	TurnPausedLeft time.Duration          // remaining turn time when paused
 }
 
 type MatchManager struct {
@@ -61,12 +71,65 @@ type MatchManager struct {
 }
 
 func NewMatchManager(hub *Hub, db *DB) *MatchManager {
-	return &MatchManager{
+	mm := &MatchManager{
 		matches:  make(map[string]*Match),
 		byCode:   make(map[string]*Match),
 		hub:      hub,
 		db:       db,
 		registry: make(map[string]engines.GameEngine),
+	}
+	go mm.runCleanup()
+	return mm
+}
+
+const (
+	waitingMatchTTL = 10 * time.Minute // waiting match with no activity
+	activeMatchTTL  = 30 * time.Minute // active match with no moves
+)
+
+// runCleanup periodically removes stale matches that have had no activity.
+// This catches agents that stop mid-game without explicitly quitting.
+func (mm *MatchManager) runCleanup() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		mm.mu.RLock()
+		candidates := make([]*Match, 0, len(mm.matches))
+		for _, m := range mm.matches {
+			candidates = append(candidates, m)
+		}
+		mm.mu.RUnlock()
+
+		for _, m := range candidates {
+			m.mu.Lock()
+			if m.Status == StatusFinished {
+				m.mu.Unlock()
+				continue
+			}
+			lastActivity := m.LastActivityAt
+			if lastActivity.IsZero() {
+				lastActivity = m.CreatedAt
+			}
+			idle := now.Sub(lastActivity)
+			ttl := waitingMatchTTL
+			if m.Status == StatusActive || m.Status == StatusPrep {
+				ttl = activeMatchTTL
+			}
+			stale := idle > ttl
+			matchID := m.ID
+			code := m.ChallengeCode
+			status := m.Status
+			m.mu.Unlock()
+
+			if stale {
+				mm.mu.Lock()
+				delete(mm.matches, matchID)
+				delete(mm.byCode, code)
+				mm.mu.Unlock()
+				log.Printf("Cleaned up stale %s match %s (idle %v > TTL %v)", status, matchID, idle.Round(time.Second), ttl)
+			}
+		}
 	}
 }
 
@@ -127,11 +190,14 @@ func (mm *MatchManager) CreateMatch(gameType, playerID string, options map[strin
 		Engine:        engine,
 		Status:        StatusWaiting,
 		ChallengeCode: code,
-		CreatedAt:     time.Now(),
-		TurnTimeout:   defaultTurnTimeout,
-		PrepDuration:  defaultPrepTime,
-		ReadyPlayers:  make(map[string]bool),
-		ForfeitCount:  make(map[string]int),
+		CreatedAt:      time.Now(),
+		LastActivityAt: time.Now(),
+		TurnTimeout:    defaultTurnTimeout,
+		PrepDuration:   defaultPrepTime,
+		ReadyPlayers:   make(map[string]bool),
+		ForfeitCount:   make(map[string]int),
+		Disconnected:   make(map[string]time.Time),
+		GraceTimers:    make(map[string]*time.Timer),
 	}
 
 	mm.mu.Lock()
@@ -310,6 +376,7 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 	pid := engines.PlayerID(playerID)
 
 	log.Printf("HandleAction: match=%s player=%s action_type=%s data=%v", matchID, playerID, action.Type, action.Data)
+	m.LastActivityAt = time.Now()
 
 	if err := m.Engine.ValidateAction(m.State, pid, action); err != nil {
 		if c := mm.hub.GetClientByPlayer(playerID); c != nil {
@@ -541,12 +608,29 @@ func (mm *MatchManager) updateELO(winnerID, loserID, gameType string, draw bool)
 	log.Printf("ELO updated: %s %d->%d, %s %d->%d", winnerID, wElo.Rating, wNew, loserID, lElo.Rating, lNew)
 }
 
+func waitingFor(view *engines.PlayerView) any {
+	if view.YourTurn {
+		return nil
+	}
+	switch view.Phase {
+	case "setup":
+		return "opponent_setup"
+	case "play":
+		return "opponent_move"
+	case "waiting":
+		return "opponent"
+	default:
+		return "opponent"
+	}
+}
+
 func (mm *MatchManager) sendPlayerTurn(c *Client, matchID string, view *engines.PlayerView) {
 	c.QueueEvent(map[string]any{
 		"type":              "your_turn",
 		"match_id":          matchID,
 		"phase":             view.Phase,
 		"your_turn":         view.YourTurn,
+		"waiting_for":       waitingFor(view),
 		"simultaneous":      view.Simultaneous,
 		"board":             view.Board,
 		"available_actions": view.AvailableActions,
@@ -559,6 +643,205 @@ func (mm *MatchManager) GetMatch(id string) *Match {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 	return mm.matches[id]
+}
+
+// findPlayerMatch finds a match containing the given player without holding mm.mu
+// while locking individual matches, avoiding deadlock with finishMatch.
+func (mm *MatchManager) findPlayerMatch(playerID string, statusFilter ...MatchStatus) *Match {
+	// Phase 1: collect candidate match pointers under mm.mu.RLock()
+	mm.mu.RLock()
+	candidates := make([]*Match, 0, len(mm.matches))
+	for _, m := range mm.matches {
+		candidates = append(candidates, m)
+	}
+	mm.mu.RUnlock()
+
+	// Phase 2: check each candidate under m.mu.Lock() (no mm.mu held)
+	for _, m := range candidates {
+		m.mu.Lock()
+		if len(statusFilter) > 0 {
+			matched := false
+			for _, s := range statusFilter {
+				if m.Status == s {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				m.mu.Unlock()
+				continue
+			}
+		}
+		if slices.Contains(m.Players, playerID) {
+			m.mu.Unlock()
+			return m
+		}
+		m.mu.Unlock()
+	}
+	return nil
+}
+
+// HandlePlayerDisconnect is called by the hub when a WebSocket client disconnects.
+// Instead of immediately forfeiting, it starts a grace period.
+func (mm *MatchManager) HandlePlayerDisconnect(playerID string) {
+	activeMatch := mm.findPlayerMatch(playerID, StatusActive, StatusWaiting, StatusPrep)
+
+	if activeMatch == nil {
+		return
+	}
+
+	activeMatch.mu.Lock()
+
+	if activeMatch.Status == StatusWaiting {
+		// No opponent yet — close the match immediately rather than leaving it
+		// as a ghost in the matchmaking pool.
+		matchID := activeMatch.ID
+		code := activeMatch.ChallengeCode
+		activeMatch.Status = StatusFinished
+		activeMatch.mu.Unlock()
+		mm.mu.Lock()
+		delete(mm.matches, matchID)
+		delete(mm.byCode, code)
+		mm.mu.Unlock()
+		log.Printf("Closed waiting match %s: creator %s disconnected", matchID, playerID)
+		return
+	}
+
+	defer activeMatch.mu.Unlock()
+
+	if activeMatch.Status != StatusActive {
+		// Prep phase disconnect — just note it, game hasn't started
+		return
+	}
+
+	now := time.Now()
+	activeMatch.Disconnected[playerID] = now
+
+	// Pause turn timer if it's this player's turn
+	if activeMatch.CurrentTurn == playerID && activeMatch.TurnTimer != nil {
+		activeMatch.TurnTimer.Stop()
+		// Estimate remaining time (we don't track start precisely, so use full timeout as safe default)
+		activeMatch.TurnPausedFor = playerID
+		activeMatch.TurnPausedLeft = activeMatch.TurnTimeout / 2 // conservative estimate
+	}
+
+	// Notify opponent
+	for _, pid := range activeMatch.Players {
+		if pid != playerID {
+			if c := mm.hub.GetClientByPlayer(pid); c != nil {
+				c.QueueEvent(map[string]any{
+					"type":          "opponent_disconnected",
+					"match_id":      activeMatch.ID,
+					"message":       "Your opponent has disconnected. They have 90 seconds to reconnect.",
+					"grace_seconds": int(disconnectGrace.Seconds()),
+				})
+			}
+		}
+	}
+
+	matchID := activeMatch.ID
+	log.Printf("Player %s disconnected from match %s, starting %v grace period", playerID, matchID, disconnectGrace)
+
+	// Start grace timer
+	activeMatch.GraceTimers[playerID] = time.AfterFunc(disconnectGrace, func() {
+		mm.handleGraceExpired(matchID, playerID)
+	})
+}
+
+// handleGraceExpired forfeits the match for the disconnected player.
+func (mm *MatchManager) handleGraceExpired(matchID, playerID string) {
+	mm.mu.RLock()
+	m, ok := mm.matches[matchID]
+	mm.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if they reconnected in the meantime
+	if _, disconnected := m.Disconnected[playerID]; !disconnected {
+		return
+	}
+	if m.Status != StatusActive {
+		return
+	}
+
+	// Grace period expired — forfeit
+	var winner string
+	for _, p := range m.Players {
+		if p != playerID {
+			winner = p
+			break
+		}
+	}
+
+	log.Printf("Grace period expired for player %s in match %s, forfeiting", playerID, matchID)
+	mm.finishMatch(m, &engines.GameResult{
+		Finished: true,
+		Winner:   engines.PlayerID(winner),
+		Reason:   fmt.Sprintf("%s forfeited (disconnected for 90s)", playerID),
+	})
+}
+
+// HandlePlayerReconnect restores a disconnected player to their active match.
+func (mm *MatchManager) HandlePlayerReconnect(playerID string) {
+	activeMatch := mm.findPlayerMatch(playerID, StatusActive)
+
+	if activeMatch == nil {
+		return
+	}
+
+	activeMatch.mu.Lock()
+	defer activeMatch.mu.Unlock()
+
+	// Verify player is actually disconnected (may have changed between find and lock)
+	if _, disconnected := activeMatch.Disconnected[playerID]; !disconnected {
+		return
+	}
+
+	// Cancel grace timer
+	if timer, ok := activeMatch.GraceTimers[playerID]; ok {
+		timer.Stop()
+		delete(activeMatch.GraceTimers, playerID)
+	}
+	delete(activeMatch.Disconnected, playerID)
+
+	log.Printf("Player %s reconnected to match %s", playerID, activeMatch.ID)
+
+	// Notify opponent
+	for _, pid := range activeMatch.Players {
+		if pid != playerID {
+			if c := mm.hub.GetClientByPlayer(pid); c != nil {
+				c.QueueEvent(map[string]any{
+					"type":     "opponent_reconnected",
+					"match_id": activeMatch.ID,
+					"message":  "Your opponent has reconnected.",
+				})
+			}
+		}
+	}
+
+	// Resume turn timer if it was paused for this player
+	if activeMatch.TurnPausedFor == playerID {
+		activeMatch.TurnPausedFor = ""
+		mm.startTurnTimer(activeMatch)
+	}
+
+	// Send current game state to reconnected player
+	if c := mm.hub.GetClientByPlayer(playerID); c != nil {
+		c.matchID = activeMatch.ID
+		if activeMatch.State != nil {
+			view := activeMatch.Engine.GetPlayerView(activeMatch.State, engines.PlayerID(playerID))
+			mm.sendPlayerTurn(c, activeMatch.ID, view)
+		}
+	}
+}
+
+// GetPlayerActiveMatch returns the active match for a player, if any.
+func (mm *MatchManager) GetPlayerActiveMatch(playerID string) *Match {
+	return mm.findPlayerMatch(playerID, StatusActive, StatusWaiting, StatusPrep)
 }
 
 func (mm *MatchManager) GetSpectatorView(m *Match) map[string]any {
@@ -1015,6 +1298,7 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 		"match_id":          m.ID,
 		"phase":             view.Phase,
 		"your_turn":         view.YourTurn,
+		"waiting_for":       waitingFor(view),
 		"simultaneous":      view.Simultaneous,
 		"board":             view.Board,
 		"available_actions": view.AvailableActions,

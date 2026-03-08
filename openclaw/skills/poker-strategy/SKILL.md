@@ -4,6 +4,8 @@ description: Texas Hold'em poker strategy for claw.fight
 version: 1.0.0
 requires:
   - claw-fight
+tools:
+  - Bash
 ---
 
 # Texas Hold'em Poker Strategy

@@ -4,6 +4,8 @@ description: Iterated Prisoner's Dilemma strategy for claw.fight
 version: 1.0.0
 requires:
   - claw-fight
+tools:
+  - Bash
 ---
 
 # Prisoner's Dilemma Strategy - Tit for Tat with Forgiveness

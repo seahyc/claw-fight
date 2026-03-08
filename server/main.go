@@ -51,7 +51,11 @@ func main() {
 		baseURL = "http://localhost:" + port
 	}
 
-	db, err := NewDB("./claw-fight.db")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./claw-fight.db"
+	}
+	db, err := NewDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -68,6 +72,11 @@ func main() {
 	matchMgr.RegisterEngine(battleship.New())
 	matchMgr.RegisterEngine(poker.New())
 	matchMgr.RegisterEngine(prisoners_dilemma.New())
+
+	// Wire up disconnect grace period handler
+	hub.mu.Lock()
+	hub.disconnectHandler = matchMgr.HandlePlayerDisconnect
+	hub.mu.Unlock()
 
 	matchmaker := NewMatchmaker(matchMgr, hub, db)
 	tournMgr := NewTournamentManager(db, matchMgr)
@@ -95,6 +104,8 @@ func main() {
 	mux.HandleFunc("GET /", srv.handleHome)
 	mux.HandleFunc("GET /match/{id}", srv.handleMatchPage)
 	mux.HandleFunc("GET /player/{id}", srv.handlePlayerPage)
+	mux.HandleFunc("GET /play", srv.handlePlayPage)
+	mux.HandleFunc("GET /play/{id}", srv.handlePlayMatchPage)
 
 	// Tournament pages
 	mux.HandleFunc("GET /tournaments", srv.handleTournamentsPage)
@@ -118,6 +129,7 @@ func main() {
 	mux.HandleFunc("POST /api/match/{id}/quit", srv.handleAPIMatchQuit)
 	mux.HandleFunc("POST /api/match/{id}/end", srv.handleAPIMatchEnd)
 	mux.HandleFunc("GET /api/match/{id}/state", srv.handleAPIMatchState)
+	mux.HandleFunc("GET /api/player/{id}/match", srv.handleAPIPlayerMatch)
 	mux.HandleFunc("GET /api/game/{type}/rules", srv.handleAPIGameRules)
 	mux.HandleFunc("GET /api/matches/open", srv.handleAPIOpenMatches)
 
@@ -129,6 +141,11 @@ func main() {
 	// WebSocket
 	mux.HandleFunc("GET /ws", srv.handleWS)
 	mux.HandleFunc("GET /ws/spectate/{matchId}", srv.handleSpectateWS)
+
+	// skill.md endpoint
+	mux.HandleFunc("GET /skill.md", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/static/skill.md")
+	})
 
 	// Static files
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
@@ -142,6 +159,8 @@ func main() {
 var templateFiles = map[string]string{
 	"home":        "web/templates/home.html",
 	"match":       "web/templates/match.html",
+	"play":        "web/templates/play.html",
+	"play_match":  "web/templates/play_match.html",
 	"player":      "web/templates/player.html",
 	"tournaments": "web/templates/tournaments.html",
 	"tournament":  "web/templates/tournament.html",
@@ -210,6 +229,36 @@ func (s *Server) handlePlayerPage(w http.ResponseWriter, r *http.Request) {
 		"Title":      player.Name,
 		"PlayerID":   player.ID,
 		"PlayerName": player.Name,
+	})
+}
+
+func (s *Server) handlePlayPage(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, "play", map[string]any{
+		"Title": "Play",
+	})
+}
+
+func (s *Server) handlePlayMatchPage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	m := s.matchMgr.GetMatch(id)
+	var gameType, status string
+	if m != nil {
+		gameType = m.GameType
+		status = string(m.Status)
+	} else {
+		dbMatch, err := s.db.GetMatch(id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		gameType = dbMatch.GameType
+		status = dbMatch.Status
+	}
+	s.renderPage(w, "play_match", map[string]any{
+		"Title":    "Play - " + id,
+		"MatchID":  id,
+		"GameType": gameType,
+		"Status":   status,
 	})
 }
 
@@ -389,6 +438,10 @@ func generateFunName() string {
 }
 
 func (s *Server) handleRegister(client *Client, msg WSMessage) {
+	if len(msg.PlayerName) > 200 {
+		client.SendJSON(map[string]any{"type": "error", "message": "player_name must be 200 characters or less"})
+		return
+	}
 	if msg.PlayerID == "" {
 		msg.PlayerID = generateID(12)
 	}
@@ -404,6 +457,9 @@ func (s *Server) handleRegister(client *Client, msg WSMessage) {
 		"player_id": msg.PlayerID,
 	})
 	log.Printf("Player registered: %s (%s)", msg.PlayerID, msg.PlayerName)
+
+	// Check for reconnection to an active match
+	s.matchMgr.HandlePlayerReconnect(msg.PlayerID)
 }
 
 func (s *Server) handleListGames(client *Client, _ WSMessage) {
@@ -754,6 +810,10 @@ func (s *Server) handleListen(client *Client, msg WSMessage) {
 func (s *Server) handleChat(client *Client, msg WSMessage) {
 	if client.playerID == "" {
 		client.SendJSON(map[string]any{"type": "error", "message": "must register first"})
+		return
+	}
+	if len(msg.Message) > 500 {
+		client.SendJSON(map[string]any{"type": "error", "message": "message must be 500 characters or less"})
 		return
 	}
 

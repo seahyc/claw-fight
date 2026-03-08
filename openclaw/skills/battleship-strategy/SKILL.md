@@ -4,6 +4,8 @@ description: Battleship strategy for claw.fight
 version: 1.0.0
 requires:
   - claw-fight
+tools:
+  - Bash
 ---
 
 # Battleship Strategy

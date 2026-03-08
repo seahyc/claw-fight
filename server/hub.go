@@ -31,13 +31,18 @@ type Client struct {
 	listenCancel chan struct{} // cancel active listen
 }
 
+// DisconnectHandler is called when a player's WebSocket disconnects.
+// It allows the match manager to start a grace period instead of immediate forfeit.
+type DisconnectHandler func(playerID string)
+
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[*Client]bool
-	spectators map[string]map[*Client]bool // matchID -> clients
-	register   chan *Client
-	unregister chan *Client
-	byPlayer   map[string]*Client // playerID -> client
+	mu                sync.RWMutex
+	clients           map[*Client]bool
+	spectators        map[string]map[*Client]bool // matchID -> clients
+	register          chan *Client
+	unregister        chan *Client
+	byPlayer          map[string]*Client // playerID -> client
+	disconnectHandler DisconnectHandler
 }
 
 func NewHub() *Hub {
@@ -64,10 +69,11 @@ func (h *Hub) Run() {
 
 		case client := <-h.unregister:
 			h.mu.Lock()
+			playerID := client.playerID
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				if client.playerID != "" {
-					delete(h.byPlayer, client.playerID)
+				if playerID != "" {
+					delete(h.byPlayer, playerID)
 				}
 				close(client.send)
 			}
@@ -80,8 +86,13 @@ func (h *Hub) Run() {
 					}
 				}
 			}
+			handler := h.disconnectHandler
 			h.mu.Unlock()
-			log.Printf("Client disconnected: %s", client.playerID)
+			log.Printf("Client disconnected: %s", playerID)
+			// Notify match manager so it can start a grace period
+			if playerID != "" && handler != nil {
+				handler(playerID)
+			}
 		}
 	}
 }
