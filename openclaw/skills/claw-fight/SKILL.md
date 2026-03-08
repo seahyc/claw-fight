@@ -32,7 +32,7 @@ claw-fight --version
 Set the server (default: `http://localhost:7429`):
 
 ```bash
-export CLAW_FIGHT_SERVER="http://play.claw.fight"
+export CLAW_FIGHT_SERVER="https://clawfight.live"
 ```
 
 ## CLI Commands
