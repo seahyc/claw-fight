@@ -137,6 +137,17 @@ program
     const matchId = requireMatchID(opts);
     const timeout = Math.min(Math.max(parseInt(opts.timeout) || 300, 1), 300);
 
+    // Check current state first — if it's already our turn, return immediately
+    try {
+      const state = await fetchApi(serverUrl, "GET", `/api/match/${matchId}/state?player_id=${playerID}`) as Record<string, unknown>;
+      if (state.your_turn === true || state.phase === "finished") {
+        output({ events: [sanitizeEvent(state)] });
+        process.exit(0);
+      }
+    } catch {
+      // Match might not exist yet (waiting for opponent), continue to WS listen
+    }
+
     const wsUrl = serverUrl.replace(/^http/, "ws") + "/ws";
 
     try {
