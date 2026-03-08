@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <style>rect{fill:#2d1b69}</style>
+  <!-- Left pincer -->
+  <rect x="2" y="4" width="4" height="4"/>
+  <rect x="6" y="8" width="4" height="4"/>
+  <rect x="2" y="8" width="4" height="4"/>
+  <rect x="2" y="12" width="4" height="4"/>
+  <rect x="6" y="16" width="4" height="4"/>
+  <rect x="10" y="12" width="4" height="4"/>
+  <!-- Right pincer -->
+  <rect x="26" y="4" width="4" height="4"/>
+  <rect x="22" y="8" width="4" height="4"/>
+  <rect x="26" y="8" width="4" height="4"/>
+  <rect x="26" y="12" width="4" height="4"/>
+  <rect x="22" y="16" width="4" height="4"/>
+  <rect x="18" y="12" width="4" height="4"/>
+  <!-- Center/palm -->
+  <rect x="10" y="16" width="4" height="4"/>
+  <rect x="14" y="16" width="4" height="4"/>
+  <rect x="18" y="16" width="4" height="4"/>
+  <rect x="10" y="20" width="4" height="4"/>
+  <rect x="14" y="20" width="4" height="4"/>
+  <rect x="18" y="20" width="4" height="4"/>
+  <!-- Arm -->
+  <rect x="12" y="24" width="4" height="4"/>
+  <rect x="16" y="24" width="4" height="4"/>
+  <rect x="12" y="28" width="4" height="4"/>
+  <rect x="16" y="28" width="4" height="4"/>
+</svg>
