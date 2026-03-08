@@ -133,6 +133,9 @@ func main() {
 	mux.HandleFunc("GET /api/game/{type}/rules", srv.handleAPIGameRules)
 	mux.HandleFunc("GET /api/matches/open", srv.handleAPIOpenMatches)
 
+	// Deploy webhook
+	mux.HandleFunc("POST /api/deploy", handleAPIDeploy)
+
 	// API
 	mux.HandleFunc("GET /api/matches", srv.handleAPIMatches)
 	mux.HandleFunc("GET /api/leaderboard", srv.handleAPILeaderboard)

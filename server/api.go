@@ -1,10 +1,16 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -368,4 +374,92 @@ func (s *Server) handleAPIGameRules(w http.ResponseWriter, r *http.Request) {
 // GET /api/matches/open
 func (s *Server) handleAPIOpenMatches(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.matchMgr.ListOpenMatches())
+}
+
+// POST /api/deploy — GitHub webhook endpoint for auto-deploy
+func handleAPIDeploy(w http.ResponseWriter, r *http.Request) {
+	secret := os.Getenv("DEPLOY_SECRET")
+	if secret == "" {
+		log.Printf("Deploy: DEPLOY_SECRET not configured")
+		http.Error(w, "deploy not configured", http.StatusInternalServerError)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify HMAC-SHA256 signature
+	sigHeader := r.Header.Get("X-Hub-Signature-256")
+	if sigHeader == "" || !strings.HasPrefix(sigHeader, "sha256=") {
+		http.Error(w, "missing or invalid signature", http.StatusUnauthorized)
+		return
+	}
+	sigHex := strings.TrimPrefix(sigHeader, "sha256=")
+	sigBytes, err := hex.DecodeString(sigHex)
+	if err != nil {
+		http.Error(w, "invalid signature encoding", http.StatusUnauthorized)
+		return
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := mac.Sum(nil)
+	if !hmac.Equal(sigBytes, expected) {
+		log.Printf("Deploy: signature mismatch")
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse payload to check ref
+	var payload struct {
+		Ref string `json:"ref"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	if payload.Ref != "refs/heads/main" {
+		w.WriteHeader(http.StatusOK)
+		writeJSON(w, map[string]string{"status": "ignored", "reason": "not main branch"})
+		return
+	}
+
+	log.Printf("Deploy: valid webhook for main branch, starting deploy...")
+
+	// Run git pull
+	gitPull := exec.Command("git", "pull")
+	gitPull.Dir = "."
+	if out, err := gitPull.CombinedOutput(); err != nil {
+		log.Printf("Deploy: git pull failed: %v\n%s", err, out)
+		http.Error(w, "git pull failed", http.StatusInternalServerError)
+		return
+	} else {
+		log.Printf("Deploy: git pull output: %s", out)
+	}
+
+	// Run go build
+	goBuild := exec.Command("go", "build", "-o", "claw-fight", ".")
+	goBuild.Dir = "."
+	if out, err := goBuild.CombinedOutput(); err != nil {
+		log.Printf("Deploy: go build failed: %v\n%s", err, out)
+		http.Error(w, "go build failed", http.StatusInternalServerError)
+		return
+	} else {
+		log.Printf("Deploy: go build output: %s", out)
+	}
+
+	// Respond before exiting
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, map[string]string{"status": "deploying"})
+
+	// Flush the response
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	log.Printf("Deploy: build complete, exiting for systemd restart...")
+	os.Exit(0)
 }
