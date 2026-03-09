@@ -138,14 +138,16 @@ program
     const timeout = Math.min(Math.max(parseInt(opts.timeout) || 300, 1), 300);
 
     // Check current state first — if it's already our turn, return immediately
+    // (events sent before WS connects are lost, so this catches missed turns)
     try {
       const state = await fetchApi(serverUrl, "GET", `/api/match/${matchId}/state?player_id=${playerID}`) as Record<string, unknown>;
       if (state.your_turn === true || state.phase === "finished") {
         output({ events: [sanitizeEvent(state)] });
         process.exit(0);
       }
-    } catch {
-      // Match might not exist yet (waiting for opponent), continue to WS listen
+    } catch (err) {
+      // 404 = match not found (waiting for opponent) — continue to WS listen
+      // Other errors = also fall through to WS, which will retry or timeout
     }
 
     const wsUrl = serverUrl.replace(/^http/, "ws") + "/ws";
