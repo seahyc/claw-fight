@@ -416,12 +416,33 @@ func (s *Server) handleAPIMatchHistory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		text := evt.ActionType
-		// Try to extract a human-readable message from result_json
+		entry := map[string]any{
+			"player":      playerName,
+			"action_type": evt.ActionType,
+			"timestamp":   evt.Timestamp.Format("2006-01-02T15:04:05Z"),
+			"seq":         evt.Seq,
+		}
+		// Try to extract data from result_json
 		if evt.ResultJSON != "" && evt.ResultJSON != "null" {
-			var result map[string]any
-			if json.Unmarshal([]byte(evt.ResultJSON), &result) == nil {
-				if msg, ok := result["message"].(string); ok && msg != "" {
-					text = msg
+			var resultWrapper map[string]any
+			if json.Unmarshal([]byte(evt.ResultJSON), &resultWrapper) == nil {
+				// New format: result_json contains {result, game_state}
+				if innerResult, ok := resultWrapper["result"]; ok {
+					if rm, ok := innerResult.(map[string]any); ok {
+						if msg, ok := rm["message"].(string); ok && msg != "" {
+							text = msg
+						}
+					}
+					entry["result"] = innerResult
+				} else {
+					// Legacy format: result_json is the ActionResult directly
+					if msg, ok := resultWrapper["message"].(string); ok && msg != "" {
+						text = msg
+					}
+					entry["result"] = resultWrapper
+				}
+				if gs, ok := resultWrapper["game_state"]; ok {
+					entry["game_state"] = gs
 				}
 			}
 		}
@@ -433,13 +454,8 @@ func (s *Server) handleAPIMatchHistory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		actionLog = append(actionLog, map[string]any{
-			"player":      playerName,
-			"text":        text,
-			"action_type": evt.ActionType,
-			"timestamp":   evt.Timestamp.Format("2006-01-02T15:04:05Z"),
-			"seq":         evt.Seq,
-		})
+		entry["text"] = text
+		actionLog = append(actionLog, entry)
 	}
 
 	// Determine winner name

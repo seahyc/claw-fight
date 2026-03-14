@@ -279,8 +279,21 @@
                     });
                 }
 
-                // Render the final game board if we have persisted state
-                if (data.game_state) {
+                // Build list of events that have game_state snapshots for replay
+                var replayEvents = [];
+                if (data.action_log) {
+                    data.action_log.forEach(function(entry, idx) {
+                        if (entry.game_state) {
+                            replayEvents.push({ index: idx, game_state: entry.game_state, entry: entry });
+                        }
+                    });
+                }
+
+                // If we have replayable events, set up the replay controls
+                if (replayEvents.length > 0) {
+                    initReplayControls(replayEvents, data.game_state);
+                } else if (data.game_state) {
+                    // No per-move snapshots; just render the final state
                     MatchViewer.renderBoard(data.game_state);
                 }
 
@@ -291,6 +304,82 @@
             .catch(function(err) {
                 console.error('Failed to load match history:', err);
             });
+    }
+
+    function initReplayControls(replayEvents, finalState) {
+        var controlsEl = document.getElementById('replay-controls');
+        var counterEl = document.getElementById('replay-counter');
+        var btnFirst = document.getElementById('replay-first');
+        var btnPrev = document.getElementById('replay-prev');
+        var btnPlay = document.getElementById('replay-play');
+        var btnNext = document.getElementById('replay-next');
+        var btnLast = document.getElementById('replay-last');
+
+        if (!controlsEl) return;
+        controlsEl.classList.remove('hidden');
+
+        var currentIdx = replayEvents.length - 1; // default to last move
+        var playInterval = null;
+
+        function highlightLogEntry(replayIdx) {
+            var entries = actionLog.querySelectorAll('.action-log-entry');
+            for (var i = 0; i < entries.length; i++) {
+                entries[i].classList.remove('current');
+            }
+            if (replayIdx >= 0 && replayIdx < replayEvents.length) {
+                var logIndex = replayEvents[replayIdx].index;
+                if (entries[logIndex]) {
+                    entries[logIndex].classList.add('current');
+                    entries[logIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
+
+        function goTo(idx) {
+            if (idx < 0) idx = 0;
+            if (idx >= replayEvents.length) idx = replayEvents.length - 1;
+            currentIdx = idx;
+            counterEl.textContent = (currentIdx + 1) + ' / ' + replayEvents.length;
+            MatchViewer.renderBoard(replayEvents[currentIdx].game_state);
+            highlightLogEntry(currentIdx);
+        }
+
+        function stopAutoPlay() {
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+                btnPlay.classList.remove('active');
+                btnPlay.innerHTML = '&#9654;';
+            }
+        }
+
+        btnFirst.addEventListener('click', function() { stopAutoPlay(); goTo(0); });
+        btnPrev.addEventListener('click', function() { stopAutoPlay(); goTo(currentIdx - 1); });
+        btnNext.addEventListener('click', function() { stopAutoPlay(); goTo(currentIdx + 1); });
+        btnLast.addEventListener('click', function() { stopAutoPlay(); goTo(replayEvents.length - 1); });
+
+        btnPlay.addEventListener('click', function() {
+            if (playInterval) {
+                stopAutoPlay();
+                return;
+            }
+            // If at the end, start from the beginning
+            if (currentIdx >= replayEvents.length - 1) {
+                goTo(0);
+            }
+            btnPlay.classList.add('active');
+            btnPlay.innerHTML = '&#9646;&#9646;';
+            playInterval = setInterval(function() {
+                if (currentIdx >= replayEvents.length - 1) {
+                    stopAutoPlay();
+                    return;
+                }
+                goTo(currentIdx + 1);
+            }, 500);
+        });
+
+        // Show the last move by default
+        goTo(replayEvents.length - 1);
     }
 
     // Check if the match status (set by server template) indicates finished

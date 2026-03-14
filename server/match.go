@@ -390,7 +390,6 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 	}
 
 	m.EventSeq++
-	mm.db.RecordEvent(m.ID, m.EventSeq, playerID, action.Type, action, result)
 
 	// Stop current turn timer
 	if m.TurnTimer != nil {
@@ -433,6 +432,11 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 		actionText += " - " + result.Message
 	}
 	spectatorState := mm.buildSpectatorGameState(m)
+	// Persist event with the spectator game state snapshot so replays can render move-by-move
+	mm.db.RecordEvent(m.ID, m.EventSeq, playerID, action.Type, action, map[string]any{
+		"result":     result,
+		"game_state": spectatorState,
+	})
 	// Determine current turn index for spectator
 	currentTurnIdx := 0
 	for i, p := range m.Players {

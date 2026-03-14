@@ -24,6 +24,15 @@
         </div>
     </div>
 
+    <div id="replay-controls" class="replay-controls hidden">
+        <button class="replay-btn" id="replay-first" title="First move">|&lt;</button>
+        <button class="replay-btn" id="replay-prev" title="Previous move">&lt;</button>
+        <button class="replay-btn" id="replay-play" title="Auto-play">&#9654;</button>
+        <button class="replay-btn" id="replay-next" title="Next move">&gt;</button>
+        <button class="replay-btn" id="replay-last" title="Last move">&gt;|</button>
+        <span class="replay-counter" id="replay-counter">0 / 0</span>
+    </div>
+
     <div class="status-bar">
         <span id="match-status" class="match-status">{{.Status}}</span>
         <span id="turn-indicator-text" class="turn-text"></span>
@@ -40,7 +49,7 @@
     </div>
 </div>
 
-<script src="/static/js/match.js?v=3"></script>
+<script src="/static/js/match.js?v=4"></script>
 {{if eq .GameType "battleship"}}
 <script src="/static/js/board_battleship.js"></script>
 {{end}}

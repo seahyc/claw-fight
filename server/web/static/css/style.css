@@ -1148,6 +1148,52 @@ h1, h2, h3, h4 {
     border-left: 2px solid var(--purple);
 }
 
+/* Replay Controls */
+.replay-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+}
+
+.replay-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-light);
+    color: var(--text);
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.replay-btn:hover {
+    background: var(--bg-card-hover);
+}
+
+.replay-btn.active {
+    background: var(--orange);
+    color: #fff;
+    border-color: var(--orange);
+}
+
+.replay-counter {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    min-width: 80px;
+    text-align: center;
+}
+
+.action-log-entry.current {
+    background: rgba(232, 115, 74, 0.15);
+    border-left: 2px solid var(--orange);
+}
+
 .chat-icon {
     font-size: 0.8rem;
 }
