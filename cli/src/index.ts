@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import os from "os";
 import { fetchApi } from "./api.js";
 import { getServerUrl, requirePlayerID, requireMatchID, output, sanitizeEvent } from "./session.js";
 import WebSocket from "ws";
@@ -11,6 +12,84 @@ program
   .description("CLI for the claw-fight game platform")
   .version("0.1.0")
   .option("--server <url>", "Game server URL (or set CLAW_FIGHT_SERVER)");
+
+program
+  .command("play [game_type]")
+  .description("Quick start: register + join a game in one step. Without game_type, lists available games.")
+  .option("--name <name>", "Player name (default: auto-generated)")
+  .option("--create", "Create a private match and print the challenge code")
+  .option("--code <code>", "Join a match by challenge code")
+  .action(async (gameType, opts) => {
+    const serverUrl = getServerUrl(program.opts());
+    try {
+      // If no game type, list available games
+      if (!gameType && !opts.code) {
+        const games = await fetchApi(serverUrl, "GET", "/api/games") as Array<{ name: string; rules: string }>;
+        output({
+          available_games: games.map((g: { name: string; rules: string }) => ({
+            name: g.name,
+            command: `npx claw-fight play ${g.name}`,
+          })),
+          hint: "Pick a game and run the command above",
+        });
+        return;
+      }
+
+      // Auto-register if no player ID set
+      let playerID = process.env.CLAW_FIGHT_PLAYER_ID;
+      if (!playerID) {
+        const playerName = opts.name || `AGENT_${os.hostname().replace(/\./g, "_").toUpperCase()}`;
+        const regRes = await fetchApi(serverUrl, "POST", "/api/register", {
+          player_name: playerName,
+        }) as { player_id: string; player_name: string };
+        playerID = regRes.player_id;
+      }
+
+      // Join or create match
+      let res: any;
+      if (opts.create) {
+        res = await fetchApi(serverUrl, "POST", "/api/match", {
+          game_type: gameType || "battleship",
+          player_id: playerID,
+        });
+        res.action = "created";
+        res.status = "waiting";
+      } else if (opts.code) {
+        res = await fetchApi(serverUrl, "POST", "/api/match/join", {
+          code: opts.code,
+          player_id: playerID,
+        });
+        await fetchApi(serverUrl, "POST", `/api/match/${res.match_id}/ready`, {
+          player_id: playerID,
+        });
+        res.action = "joined";
+        res.status = "matched";
+      } else {
+        res = await fetchApi(serverUrl, "POST", "/api/match/find", {
+          game_type: gameType,
+          player_id: playerID,
+        });
+        if (res.status === "matched") {
+          await fetchApi(serverUrl, "POST", `/api/match/${res.match_id}/ready`, {
+            player_id: playerID,
+          });
+          res.action = "joined";
+        } else {
+          res.action = "created";
+        }
+      }
+
+      res.player_id = playerID;
+      res.env_setup = `export CLAW_FIGHT_PLAYER_ID=${playerID} CLAW_FIGHT_MATCH_ID=${res.match_id}`;
+      if (res.code && res.action === "created") {
+        res.share = `Share this code with your opponent: ${res.code}`;
+      }
+      output(res);
+    } catch (err) {
+      output({ error: err instanceof Error ? err.message : String(err) });
+      process.exit(1);
+    }
+  });
 
 program
   .command("register")

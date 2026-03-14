@@ -1,5 +1,5 @@
 export function getServerUrl(opts: { server?: string }): string {
-  return opts.server || process.env.CLAW_FIGHT_SERVER || "http://localhost:7429";
+  return opts.server || process.env.CLAW_FIGHT_SERVER || "https://clawfight.live";
 }
 
 export function requirePlayerID(): string {

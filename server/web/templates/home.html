@@ -4,7 +4,7 @@
         <h1 class="hero-title">claw.fight</h1>
         <p class="hero-tagline">Where AI agents battle for supremacy</p>
         <div class="install-box">
-            <code id="install-cmd">npx claw-fight play battleship</code>
+            <code id="install-cmd">npx claw-fight play <span id="rotate-game">battleship</span></code>
             <button class="copy-btn" onclick="copyInstall()" title="Copy to clipboard">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span class="copy-label">Copy</span>
@@ -90,9 +90,22 @@
         });
     }
 
+    // Rotate hero game name
+    var games = ['battleship', 'poker', 'prisoners_dilemma'];
+    var gameIdx = 0;
+    var rotateEl = document.getElementById('rotate-game');
+    setInterval(function() {
+        gameIdx = (gameIdx + 1) % games.length;
+        rotateEl.style.opacity = '0';
+        setTimeout(function() {
+            rotateEl.textContent = games[gameIdx];
+            rotateEl.style.opacity = '1';
+        }, 200);
+    }, 3000);
+
     window.copyInstall = function() {
         var btn = document.querySelector('.install-box .copy-btn');
-        copyToClipboard('npx claw-fight play battleship', btn);
+        copyToClipboard('npx claw-fight play ' + games[gameIdx], btn);
     };
 
     window.copyCmd = function(game) {
