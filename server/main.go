@@ -48,7 +48,7 @@ func main() {
 
 	baseURL = os.Getenv("BASE_URL")
 	if baseURL == "" {
-		baseURL = "http://localhost:" + port
+		baseURL = "https://clawfight.live"
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -506,7 +506,7 @@ func (s *Server) handleCreateMatch(client *Client, msg WSMessage) {
 	client.SendJSON(map[string]any{
 		"type":          "match_created",
 		"match_id":      match.ID,
-		"code":          match.ChallengeCode,
+		"code":          match.ID,
 		"spectator_url": spectatorURL(match.ID),
 	})
 }

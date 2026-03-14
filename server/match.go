@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/big"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,7 +38,6 @@ type Match struct {
 	Engine        engines.GameEngine
 	State         *engines.GameState
 	Status        MatchStatus
-	ChallengeCode string
 	CreatedAt     time.Time
 	StartedAt     time.Time
 	EndedAt       time.Time
@@ -64,7 +64,6 @@ type Match struct {
 type MatchManager struct {
 	mu       sync.RWMutex
 	matches  map[string]*Match
-	byCode   map[string]*Match
 	hub      *Hub
 	db       *DB
 	registry map[string]engines.GameEngine
@@ -73,7 +72,6 @@ type MatchManager struct {
 func NewMatchManager(hub *Hub, db *DB) *MatchManager {
 	mm := &MatchManager{
 		matches:  make(map[string]*Match),
-		byCode:   make(map[string]*Match),
 		hub:      hub,
 		db:       db,
 		registry: make(map[string]engines.GameEngine),
@@ -118,14 +116,12 @@ func (mm *MatchManager) runCleanup() {
 			}
 			stale := idle > ttl
 			matchID := m.ID
-			code := m.ChallengeCode
 			status := m.Status
 			m.mu.Unlock()
 
 			if stale {
 				mm.mu.Lock()
 				delete(mm.matches, matchID)
-				delete(mm.byCode, code)
 				mm.mu.Unlock()
 				log.Printf("Cleaned up stale %s match %s (idle %v > TTL %v)", status, matchID, idle.Round(time.Second), ttl)
 			}
@@ -164,7 +160,7 @@ func (mm *MatchManager) ListOpenMatches() []map[string]any {
 			open = append(open, map[string]any{
 				"match_id":  m.ID,
 				"game_type": m.GameType,
-				"code":      m.ChallengeCode,
+				"code":      m.ID,
 				"players":   len(m.Players),
 				"needs":     m.Engine.MaxPlayers() - len(m.Players),
 			})
@@ -180,8 +176,7 @@ func (mm *MatchManager) CreateMatch(gameType, playerID string, options map[strin
 		return nil, fmt.Errorf("unknown game type: %s", gameType)
 	}
 
-	matchID := generateID(8)
-	code := generateCode(6)
+	matchID := generateID(4)
 
 	m := &Match{
 		ID:            matchID,
@@ -189,7 +184,6 @@ func (mm *MatchManager) CreateMatch(gameType, playerID string, options map[strin
 		Players:       []string{playerID},
 		Engine:        engine,
 		Status:        StatusWaiting,
-		ChallengeCode: code,
 		CreatedAt:      time.Now(),
 		LastActivityAt: time.Now(),
 		TurnTimeout:    defaultTurnTimeout,
@@ -202,17 +196,16 @@ func (mm *MatchManager) CreateMatch(gameType, playerID string, options map[strin
 
 	mm.mu.Lock()
 	mm.matches[matchID] = m
-	mm.byCode[code] = m
 	mm.mu.Unlock()
 
-	if err := mm.db.CreateMatch(matchID, gameType, code); err != nil {
+	if err := mm.db.CreateMatch(matchID, gameType, matchID); err != nil {
 		log.Printf("Failed to persist match: %v", err)
 	}
 	if err := mm.db.AddMatchPlayer(matchID, playerID, 0); err != nil {
 		log.Printf("Failed to persist match player: %v", err)
 	}
 
-	log.Printf("Match created: %s (code: %s, game: %s, by: %s)", matchID, code, gameType, playerID)
+	log.Printf("Match created: %s (game: %s, by: %s)", matchID, gameType, playerID)
 	return m, nil
 }
 
@@ -253,8 +246,9 @@ func (mm *MatchManager) JoinMatch(matchID, playerID string) (*Match, error) {
 }
 
 func (mm *MatchManager) JoinByCode(code, playerID string) (*Match, error) {
+	id := strings.ToUpper(code)
 	mm.mu.RLock()
-	m, ok := mm.byCode[code]
+	m, ok := mm.matches[id]
 	mm.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("invalid challenge code: %s", code)
@@ -582,10 +576,6 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 		"timestamp":  time.Now().UnixMilli(),
 	})
 
-	// Cleanup
-	mm.mu.Lock()
-	delete(mm.byCode, m.ChallengeCode)
-	mm.mu.Unlock()
 }
 
 func (mm *MatchManager) updateELO(winnerID, loserID, gameType string, draw bool) {
@@ -696,12 +686,10 @@ func (mm *MatchManager) HandlePlayerDisconnect(playerID string) {
 		// No opponent yet — close the match immediately rather than leaving it
 		// as a ghost in the matchmaking pool.
 		matchID := activeMatch.ID
-		code := activeMatch.ChallengeCode
 		activeMatch.Status = StatusFinished
 		activeMatch.mu.Unlock()
 		mm.mu.Lock()
 		delete(mm.matches, matchID)
-		delete(mm.byCode, code)
 		mm.mu.Unlock()
 		log.Printf("Closed waiting match %s: creator %s disconnected", matchID, playerID)
 		return
@@ -1214,11 +1202,6 @@ func (mm *MatchManager) broadcastSpectatorState(m *Match) {
 }
 
 func generateID(n int) string {
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	return randomString(n, chars)
-}
-
-func generateCode(n int) string {
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	return randomString(n, chars)
 }
@@ -1252,7 +1235,7 @@ func (m *Match) ToJSON() map[string]any {
 		"game_type":      m.GameType,
 		"status":         string(m.Status),
 		"players":        m.Players,
-		"challenge_code": m.ChallengeCode,
+		"challenge_code": m.ID,
 		"created_at":     m.CreatedAt,
 	}
 	if !m.StartedAt.IsZero() {
@@ -1412,7 +1395,6 @@ func (mm *MatchManager) EndMatch(matchID, playerID string) error {
 
 	// Cleanup from manager maps
 	mm.mu.Lock()
-	delete(mm.byCode, m.ChallengeCode)
 	delete(mm.matches, m.ID)
 	mm.mu.Unlock()
 

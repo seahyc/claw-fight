@@ -81,7 +81,7 @@ func (s *Server) handleAPICreateMatch(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]any{
 		"match_id":      match.ID,
-		"code":          match.ChallengeCode,
+		"code":          match.ID,
 		"spectator_url": spectatorURL(match.ID),
 	})
 }

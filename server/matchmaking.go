@@ -172,7 +172,7 @@ func (m *Matchmaker) EnqueueOrCreate(gameType, playerID string) (code string, ma
 	}
 
 	log.Printf("Player %s queued for %s (rating: %d)", playerID, gameType, elo.Rating)
-	return match.ChallengeCode, match.ID, nil
+	return match.ID, match.ID, nil
 }
 
 func (m *Matchmaker) runLoop() {
