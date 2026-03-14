@@ -27,14 +27,15 @@ type ELORating struct {
 }
 
 type MatchRecord struct {
-	ID            string     `json:"id"`
-	GameType      string     `json:"game_type"`
-	Status        string     `json:"status"`
-	ChallengeCode string    `json:"challenge_code"`
-	CreatedAt     time.Time  `json:"created_at"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	EndedAt       *time.Time `json:"ended_at,omitempty"`
-	WinnerID      string     `json:"winner_id,omitempty"`
+	ID             string     `json:"id"`
+	GameType       string     `json:"game_type"`
+	Status         string     `json:"status"`
+	ChallengeCode  string    `json:"challenge_code"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	EndedAt        *time.Time `json:"ended_at,omitempty"`
+	WinnerID       string     `json:"winner_id,omitempty"`
+	FinalStateJSON string     `json:"final_state_json,omitempty"`
 }
 
 type MatchEvent struct {
@@ -105,7 +106,8 @@ func (db *DB) createTables() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		started_at DATETIME,
 		ended_at DATETIME,
-		winner_id TEXT
+		winner_id TEXT,
+		final_state_json TEXT DEFAULT ''
 	);
 
 	CREATE TABLE IF NOT EXISTS match_players (
@@ -164,7 +166,14 @@ func (db *DB) createTables() error {
 	CREATE INDEX IF NOT EXISTS idx_elo_game ON elo_ratings(game_type, rating DESC);
 	`
 	_, err := db.conn.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add final_state_json column if it doesn't exist (for existing DBs)
+	db.conn.Exec("ALTER TABLE matches ADD COLUMN final_state_json TEXT DEFAULT ''")
+
+	return nil
 }
 
 func (db *DB) CreatePlayer(id, name string) error {
@@ -377,12 +386,17 @@ func (db *DB) GetMatchByCode(code string) (*MatchRecord, error) {
 	return m, nil
 }
 
+func (db *DB) SaveFinalState(matchID string, stateJSON string) error {
+	_, err := db.conn.Exec("UPDATE matches SET final_state_json = ? WHERE id = ?", stateJSON, matchID)
+	return err
+}
+
 func (db *DB) GetMatch(id string) (*MatchRecord, error) {
 	m := &MatchRecord{}
 	err := db.conn.QueryRow(
-		"SELECT id, game_type, status, challenge_code, created_at, started_at, ended_at, COALESCE(winner_id, '') FROM matches WHERE id = ?",
+		"SELECT id, game_type, status, challenge_code, created_at, started_at, ended_at, COALESCE(winner_id, ''), COALESCE(final_state_json, '') FROM matches WHERE id = ?",
 		id,
-	).Scan(&m.ID, &m.GameType, &m.Status, &m.ChallengeCode, &m.CreatedAt, &m.StartedAt, &m.EndedAt, &m.WinnerID)
+	).Scan(&m.ID, &m.GameType, &m.Status, &m.ChallengeCode, &m.CreatedAt, &m.StartedAt, &m.EndedAt, &m.WinnerID, &m.FinalStateJSON)
 	if err != nil {
 		return nil, err
 	}

@@ -576,6 +576,16 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 		"timestamp":  time.Now().UnixMilli(),
 	})
 
+	// Persist the final game state so the match history page can render the board
+	if finalState != nil {
+		stateJSON, err := json.Marshal(finalState)
+		if err != nil {
+			log.Printf("Failed to marshal final state for match %s: %v", m.ID, err)
+		} else if err := mm.db.SaveFinalState(m.ID, string(stateJSON)); err != nil {
+			log.Printf("Failed to save final state for match %s: %v", m.ID, err)
+		}
+	}
+
 }
 
 func (mm *MatchManager) updateELO(winnerID, loserID, gameType string, draw bool) {

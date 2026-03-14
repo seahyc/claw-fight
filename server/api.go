@@ -461,7 +461,7 @@ func (s *Server) handleAPIMatchHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, map[string]any{
+	resp := map[string]any{
 		"match_id":   match.ID,
 		"game_type":  match.GameType,
 		"status":     match.Status,
@@ -473,7 +473,17 @@ func (s *Server) handleAPIMatchHistory(w http.ResponseWriter, r *http.Request) {
 		"created_at": match.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		"started_at": match.StartedAt,
 		"ended_at":   match.EndedAt,
-	})
+	}
+
+	// Include persisted final game state so the board renderer can display it
+	if match.FinalStateJSON != "" {
+		var gameState map[string]any
+		if json.Unmarshal([]byte(match.FinalStateJSON), &gameState) == nil {
+			resp["game_state"] = gameState
+		}
+	}
+
+	writeJSON(w, resp)
 }
 
 // GET /api/matches/open

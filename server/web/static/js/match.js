@@ -279,6 +279,11 @@
                     });
                 }
 
+                // Render the final game board if we have persisted state
+                if (data.game_state) {
+                    MatchViewer.renderBoard(data.game_state);
+                }
+
                 // Show result inline (not as blocking overlay)
                 MatchViewer.showGameOver(data.result || 'Match finished', true);
                 MatchViewer.appendAction(null, data.result || 'Match finished');
