@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	defaultTurnTimeout = 60 * time.Second
+	defaultTurnTimeout = 5 * time.Minute
 	defaultPrepTime    = 5 * time.Second
 	maxForfeits        = 3
-	disconnectGrace    = 90 * time.Second
+	disconnectGrace    = 5 * time.Minute
 )
 
 type MatchStatus string
@@ -83,7 +83,7 @@ func NewMatchManager(hub *Hub, db *DB) *MatchManager {
 }
 
 const (
-	waitingMatchTTL = 10 * time.Minute // waiting match with no activity
+	waitingMatchTTL = 30 * time.Minute // waiting match with no activity
 	activeMatchTTL  = 30 * time.Minute // active match with no moves
 )
 
@@ -732,7 +732,7 @@ func (mm *MatchManager) HandlePlayerDisconnect(playerID string) {
 				c.QueueEvent(map[string]any{
 					"type":          "opponent_disconnected",
 					"match_id":      activeMatch.ID,
-					"message":       "Your opponent has disconnected. They have 90 seconds to reconnect.",
+					"message":       "Your opponent has disconnected. They have 5 minutes to reconnect.",
 					"grace_seconds": int(disconnectGrace.Seconds()),
 				})
 			}
@@ -781,7 +781,7 @@ func (mm *MatchManager) handleGraceExpired(matchID, playerID string) {
 	mm.finishMatch(m, &engines.GameResult{
 		Finished: true,
 		Winner:   engines.PlayerID(winner),
-		Reason:   fmt.Sprintf("%s forfeited (disconnected for 90s)", playerID),
+		Reason:   fmt.Sprintf("%s forfeited (disconnected for 5m)", playerID),
 	})
 }
 
