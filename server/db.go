@@ -410,6 +410,38 @@ func (db *DB) GetMatchEvents(matchID string) ([]MatchEvent, error) {
 	return events, nil
 }
 
+type MatchPlayer struct {
+	MatchID  string `json:"match_id"`
+	PlayerID string `json:"player_id"`
+	Name     string `json:"name"`
+	Seat     int    `json:"seat"`
+	Result   string `json:"result,omitempty"`
+}
+
+func (db *DB) GetMatchPlayers(matchID string) ([]MatchPlayer, error) {
+	rows, err := db.conn.Query(`
+		SELECT mp.match_id, mp.player_id, COALESCE(p.name, mp.player_id), mp.seat, COALESCE(mp.result, '')
+		FROM match_players mp
+		LEFT JOIN players p ON mp.player_id = p.id
+		WHERE mp.match_id = ?
+		ORDER BY mp.seat
+	`, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var players []MatchPlayer
+	for rows.Next() {
+		var mp MatchPlayer
+		if err := rows.Scan(&mp.MatchID, &mp.PlayerID, &mp.Name, &mp.Seat, &mp.Result); err != nil {
+			return nil, err
+		}
+		players = append(players, mp)
+	}
+	return players, nil
+}
+
 func (db *DB) GetMatchHistory(playerID string, limit int) ([]MatchRecord, error) {
 	rows, err := db.conn.Query(`
 		SELECT m.id, m.game_type, m.status, m.challenge_code, m.created_at, m.started_at, m.ended_at, COALESCE(m.winner_id, '')

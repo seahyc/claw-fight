@@ -371,6 +371,111 @@ func (s *Server) handleAPIGameRules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /api/match/{id}/history
+func (s *Server) handleAPIMatchHistory(w http.ResponseWriter, r *http.Request) {
+	matchID := r.PathValue("id")
+
+	match, err := s.db.GetMatch(matchID)
+	if err != nil {
+		http.Error(w, "match not found", 404)
+		return
+	}
+
+	players, err := s.db.GetMatchPlayers(matchID)
+	if err != nil {
+		players = nil
+	}
+
+	events, err := s.db.GetMatchEvents(matchID)
+	if err != nil {
+		events = nil
+	}
+
+	// Build player info array matching the spectator view format
+	playerInfos := make([]map[string]any, 0, len(players))
+	playerNameMap := make(map[string]string)
+	for _, p := range players {
+		elo := 1200
+		if e, err := s.db.GetOrCreateELO(p.PlayerID, match.GameType); err == nil {
+			elo = e.Rating
+		}
+		playerInfos = append(playerInfos, map[string]any{
+			"id":   p.PlayerID,
+			"name": p.Name,
+			"elo":  elo,
+		})
+		playerNameMap[p.PlayerID] = p.Name
+	}
+
+	// Build action log in the format the frontend expects
+	actionLog := make([]map[string]any, 0, len(events))
+	for _, evt := range events {
+		playerName := evt.PlayerID
+		if name, ok := playerNameMap[evt.PlayerID]; ok {
+			playerName = name
+		}
+
+		text := evt.ActionType
+		// Try to extract a human-readable message from result_json
+		if evt.ResultJSON != "" && evt.ResultJSON != "null" {
+			var result map[string]any
+			if json.Unmarshal([]byte(evt.ResultJSON), &result) == nil {
+				if msg, ok := result["message"].(string); ok && msg != "" {
+					text = msg
+				}
+			}
+		}
+		// For chat events, use the action_json as the message text
+		if evt.ActionType == "chat" {
+			var chatMsg string
+			if json.Unmarshal([]byte(evt.ActionJSON), &chatMsg) == nil && chatMsg != "" {
+				text = chatMsg
+			}
+		}
+
+		actionLog = append(actionLog, map[string]any{
+			"player":      playerName,
+			"text":        text,
+			"action_type": evt.ActionType,
+			"timestamp":   evt.Timestamp.Format("2006-01-02T15:04:05Z"),
+			"seq":         evt.Seq,
+		})
+	}
+
+	// Determine winner name
+	winnerName := ""
+	if match.WinnerID != "" {
+		if name, ok := playerNameMap[match.WinnerID]; ok {
+			winnerName = name
+		} else {
+			winnerName = match.WinnerID
+		}
+	}
+
+	result := ""
+	if match.Status == "finished" {
+		if winnerName != "" {
+			result = winnerName + " wins!"
+		} else {
+			result = "Draw"
+		}
+	}
+
+	writeJSON(w, map[string]any{
+		"match_id":   match.ID,
+		"game_type":  match.GameType,
+		"status":     match.Status,
+		"players":    playerInfos,
+		"winner_id":  match.WinnerID,
+		"winner":     winnerName,
+		"result":     result,
+		"action_log": actionLog,
+		"created_at": match.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		"started_at": match.StartedAt,
+		"ended_at":   match.EndedAt,
+	})
+}
+
 // GET /api/matches/open
 func (s *Server) handleAPIOpenMatches(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.matchMgr.ListOpenMatches())

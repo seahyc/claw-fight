@@ -129,6 +129,7 @@ func main() {
 	mux.HandleFunc("POST /api/match/{id}/quit", srv.handleAPIMatchQuit)
 	mux.HandleFunc("POST /api/match/{id}/end", srv.handleAPIMatchEnd)
 	mux.HandleFunc("GET /api/match/{id}/state", srv.handleAPIMatchState)
+	mux.HandleFunc("GET /api/match/{id}/history", srv.handleAPIMatchHistory)
 	mux.HandleFunc("GET /api/player/{id}/match", srv.handleAPIPlayerMatch)
 	mux.HandleFunc("GET /api/game/{type}/rules", srv.handleAPIGameRules)
 	mux.HandleFunc("GET /api/matches/open", srv.handleAPIOpenMatches)

@@ -101,9 +101,16 @@
             }, 250);
         },
 
-        showGameOver: function(result) {
+        showGameOver: function(result, isHistory) {
             if (resultEl) resultEl.textContent = result;
-            if (overlayEl) overlayEl.classList.remove('hidden');
+            if (overlayEl) {
+                if (isHistory) {
+                    // For historical matches, don't show the blocking overlay
+                    overlayEl.classList.add('hidden');
+                } else {
+                    overlayEl.classList.remove('hidden');
+                }
+            }
             MatchViewer.setTurn(0);
             MatchViewer.setTimer(null);
             MatchViewer.setStatus('COMPLETE');
@@ -227,6 +234,64 @@
         ws.onerror = function() {
             ws.close();
         };
+    }
+
+    // Make the game-over overlay dismissible by clicking on it
+    if (overlayEl) {
+        overlayEl.addEventListener('click', function(e) {
+            // Don't dismiss if clicking the "Back to Home" link
+            if (e.target.tagName === 'A') return;
+            overlayEl.classList.add('hidden');
+        });
+    }
+
+    // Load match history for finished matches
+    function loadMatchHistory() {
+        if (!matchId) return;
+        fetch('/api/match/' + matchId + '/history')
+            .then(function(res) {
+                if (!res.ok) return null;
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                if (data.status !== 'finished') return;
+
+                // Set player info
+                if (data.players && data.players.length > 0) {
+                    MatchViewer.players.p1 = data.players[0] ? data.players[0].name : 'Player 1';
+                    MatchViewer.players.p2 = data.players[1] ? data.players[1].name : 'Player 2';
+                    p1NameEl.textContent = MatchViewer.players.p1;
+                    p2NameEl.textContent = MatchViewer.players.p2;
+                    if (data.players[0] && data.players[0].elo) p1EloEl.textContent = '(' + data.players[0].elo + ')';
+                    if (data.players[1] && data.players[1].elo) p2EloEl.textContent = '(' + data.players[1].elo + ')';
+                }
+
+                // Populate the action log
+                if (data.action_log && data.action_log.length > 0) {
+                    actionLog.innerHTML = '';
+                    data.action_log.forEach(function(entry) {
+                        if (entry.action_type === 'chat') {
+                            MatchViewer.appendChat(entry.player, entry.text);
+                        } else {
+                            MatchViewer.appendAction(entry.player, entry.text, entry.timestamp);
+                        }
+                    });
+                }
+
+                // Show result inline (not as blocking overlay)
+                MatchViewer.showGameOver(data.result || 'Match finished', true);
+                MatchViewer.appendAction(null, data.result || 'Match finished');
+            })
+            .catch(function(err) {
+                console.error('Failed to load match history:', err);
+            });
+    }
+
+    // Check if the match status (set by server template) indicates finished
+    var initialStatus = statusEl ? statusEl.textContent.trim().toLowerCase() : '';
+    if (initialStatus === 'finished' || initialStatus === 'completed' || initialStatus === 'ended') {
+        loadMatchHistory();
     }
 
     connect();
