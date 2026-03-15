@@ -33,7 +33,7 @@
             return;
         }
 
-        var gs = state.game_state || {};
+        var gs = state.game_specific || state.game_state || {};
         var container = document.createElement('div');
         container.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1rem;padding:1rem;';
 
@@ -58,7 +58,8 @@
         container.appendChild(info);
 
         // Board
-        var board = gs.board || [['','',''],['','',''],['','','']];
+        // Board can be at state.board (PlayerView) or gs.board (spectator)
+        var board = state.board || gs.board || [['','',''],['','',''],['','','']];
         var grid = document.createElement('div');
         grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,100px);grid-template-rows:repeat(3,100px);gap:4px;background:var(--border-light);border-radius:var(--radius-md);overflow:hidden;';
 
