@@ -153,8 +153,12 @@ func main() {
 		http.ServeFile(w, r, "web/static/skill.md")
 	})
 
-	// Static files
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	// Static files — short cache to avoid stale JS/CSS
+	staticFS := http.StripPrefix("/static/", http.FileServer(http.Dir("web/static")))
+	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		staticFS.ServeHTTP(w, r)
+	}))
 
 	log.Printf("Server starting on :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {

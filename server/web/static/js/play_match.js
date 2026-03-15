@@ -202,6 +202,17 @@
                 window.PlayMatch.refreshState();
                 break;
 
+            case 'opponent_left':
+            case 'match_ended':
+                matchStatus = 'waiting';
+                window.PlayMatch.matchStatus = 'waiting';
+                window.PlayMatch.isMyTurn = false;
+                if (window.MatchViewer) {
+                    window.MatchViewer.appendAction(null, msg.message || 'Opponent left the match');
+                }
+                window.PlayMatch.refreshState();
+                break;
+
             case 'error':
                 console.error('Server error:', msg.message);
                 break;
