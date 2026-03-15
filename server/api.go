@@ -206,7 +206,9 @@ func (s *Server) handleAPIMatchState(w http.ResponseWriter, r *http.Request) {
 
 	state, err := s.matchMgr.GetState(matchID, playerID)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(400)
+		writeJSON(w, map[string]any{"error": err.Error()})
 		return
 	}
 	writeJSON(w, state)

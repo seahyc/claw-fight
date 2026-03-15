@@ -25,7 +25,7 @@
         if (!boardEl) return;
         boardEl.innerHTML = '';
 
-        if (state.status === 'waiting') {
+        if ((state.status === 'waiting' || state.phase === 'waiting')) {
             boardEl.innerHTML = '<div class="phase-banner">Waiting for opponent to join...</div>';
             return;
         }

@@ -1309,9 +1309,12 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 
 	if m.State == nil {
 		return map[string]any{
-			"type":     "game_state",
-			"match_id": m.ID,
-			"phase":    string(m.Status),
+			"type":        "game_state",
+			"match_id":    m.ID,
+			"phase":       string(m.Status),
+			"status":      string(m.Status),
+			"your_turn":   false,
+			"waiting_for": "opponent",
 		}, nil
 	}
 
