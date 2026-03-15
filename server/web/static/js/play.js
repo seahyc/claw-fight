@@ -23,6 +23,13 @@
 
     if (playerName) nameInput.value = playerName;
 
+    // Pre-select game from query param
+    var urlParams = new URLSearchParams(window.location.search);
+    var preselectedGame = urlParams.get('game');
+    if (preselectedGame && gameType) {
+        gameType.value = preselectedGame;
+    }
+
     function showLoggedIn() {
         registerStatus.textContent = 'Registered as: ' + playerName + ' (' + playerId.slice(0, 8) + '...)';
         registerStatus.className = 'play-status success';

@@ -354,6 +354,25 @@ h1, h2, h3, h4 {
     overflow: hidden;
 }
 
+.game-card-play {
+    display: block;
+    text-align: center;
+    padding: 0.5rem;
+    margin-top: 0.75rem;
+    background: var(--orange);
+    color: #fff !important;
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+}
+
+.game-card-play:hover {
+    background: var(--orange-hover);
+    transform: translateY(-1px);
+    color: #fff !important;
+}
+
 .game-card-cmd code {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.8rem;
