@@ -105,6 +105,11 @@
             '<span>' + (gs.win_length || 4) + ' in a row to win</span>';
         container.appendChild(legend);
 
+        var rules = document.createElement('div');
+        rules.style.cssText = 'font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;text-align:center;';
+        rules.textContent = '5\u00D75 grid \u00B7 4 in a row to win \u00B7 Positions 0-24';
+        container.appendChild(rules);
+
         boardEl.appendChild(container);
     }
 

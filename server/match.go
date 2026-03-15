@@ -1326,6 +1326,15 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 	if view == nil {
 		return nil, fmt.Errorf("could not get player view")
 	}
+
+	playerIdx := 0
+	for i, p := range m.Players {
+		if p == playerID {
+			playerIdx = i + 1
+			break
+		}
+	}
+
 	return map[string]any{
 		"type":              "game_state",
 		"match_id":          m.ID,
@@ -1337,6 +1346,7 @@ func (mm *MatchManager) GetState(matchID, playerID string) (map[string]any, erro
 		"available_actions": view.AvailableActions,
 		"turn_number":       view.TurnNumber,
 		"game_specific":     view.GameSpecific,
+		"player_index":      playerIdx,
 	}, nil
 }
 

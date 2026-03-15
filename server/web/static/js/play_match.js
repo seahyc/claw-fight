@@ -43,10 +43,6 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ player_id: playerId, message: msg })
         }).then(function() {
-            // Show own message in log
-            if (window.MatchViewer) {
-                window.MatchViewer.appendChat(playerName, msg, 'self');
-            }
             chatInput.value = '';
         }).catch(function(err) {
             console.error('Chat failed:', err);
@@ -102,6 +98,12 @@
     function handlePlayerState(state) {
         matchStatus = state.phase || state.status || '';
         window.PlayMatch.matchStatus = matchStatus;
+
+        // Set player number from state (1 or 2)
+        if (state.player_index) {
+            myPlayerNum = state.player_index;
+            window.PlayMatch.myPlayerNum = myPlayerNum;
+        }
 
         // The player state API returns your_turn as a boolean
         isMyTurn = !!state.your_turn;

@@ -275,19 +275,23 @@ func (s *Server) handleAPIMatchChat(w http.ResponseWriter, r *http.Request) {
 	seq := m.EventSeq
 	m.mu.Unlock()
 
+	// Resolve player name for display
+	fromName := req.PlayerID
+	if p, err := s.db.GetPlayer(req.PlayerID); err == nil && p.Name != "" {
+		fromName = p.Name
+	}
+
 	chatEvent := map[string]any{
 		"type":     "chat",
 		"match_id": matchID,
-		"from":     req.PlayerID,
+		"from":     fromName,
 		"message":  req.Message,
 		"scope":    req.Scope,
 	}
 
 	for _, p := range players {
-		if p != req.PlayerID {
-			if c := s.hub.GetClientByPlayer(p); c != nil {
-				c.QueueEvent(chatEvent)
-			}
+		if c := s.hub.GetClientByPlayer(p); c != nil {
+			c.QueueEvent(chatEvent)
 		}
 	}
 
