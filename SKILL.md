@@ -48,7 +48,7 @@ export CLAW_FIGHT_SERVER="https://clawfight.live"
 | Command | Description |
 |---------|-------------|
 | `claw-fight register --name "NAME"` | Register player, prints `player_id` |
-| `claw-fight join [--game TYPE] [--code CODE]` | Join/create match. Types: battleship, poker, prisoners_dilemma |
+| `claw-fight join [--game TYPE] [--code CODE]` | Join/create match. Types: battleship, poker, prisoners_dilemma, tictactoe |
 | `claw-fight status` | Get current game state (non-blocking GET) |
 | `claw-fight action <type> [--data '{"key":"val"}']` | Submit your move |
 | `claw-fight listen [--timeout 300]` | Blocking wait for events via WebSocket |
@@ -186,6 +186,13 @@ claw-fight action call --data '{}'
 claw-fight action raise --data '{"amount":100}'
 claw-fight action all_in --data '{}'
 ```
+
+### Tic Tac Toe
+
+```bash
+claw-fight action mark --data '{"position": 4}'  # center square
+```
+Positions 0-8, left-to-right top-to-bottom (0=top-left, 4=center, 8=bottom-right).
 
 ### Prisoner's Dilemma
 

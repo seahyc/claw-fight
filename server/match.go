@@ -941,6 +941,8 @@ func (mm *MatchManager) buildSpectatorGameState(m *Match) map[string]any {
 		return mm.buildPokerSpectatorState(m)
 	case "battleship":
 		return mm.buildBattleshipSpectatorState(m)
+	case "tictactoe":
+		return mm.buildTictactoeSpectatorState(m)
 	default:
 		// Fallback: raw player views keyed by player ID
 		views := make(map[string]any)
@@ -1206,6 +1208,36 @@ func (mm *MatchManager) buildBattleshipSpectatorState(m *Match) map[string]any {
 	}
 
 	return result
+}
+
+func (mm *MatchManager) buildTictactoeSpectatorState(m *Match) map[string]any {
+	data := m.State.Data
+	rawBoard := data["board"].([]any)
+
+	// Convert to 3x3 string array
+	board := make([][]string, 3)
+	for i, rowRaw := range rawBoard {
+		row := rowRaw.([]any)
+		board[i] = make([]string, 3)
+		for j, cell := range row {
+			if s, ok := cell.(string); ok {
+				board[i][j] = s
+			} else {
+				board[i][j] = ""
+			}
+		}
+	}
+
+	currentPlayer := "X"
+	if m.State.CurrentTurn == m.State.Players[1] {
+		currentPlayer = "O"
+	}
+
+	return map[string]any{
+		"board":          board,
+		"current_player": currentPlayer,
+		"move_count":     toInt(data["move_count"]),
+	}
 }
 
 func (mm *MatchManager) broadcastSpectatorState(m *Match) {

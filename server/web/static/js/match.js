@@ -139,6 +139,8 @@
                 renderPokerBoard(state);
             } else if (gameType === 'prisoners_dilemma' && typeof renderPrisonersBoard === 'function') {
                 renderPrisonersBoard(state);
+            } else if (gameType === 'tictactoe' && typeof renderTictactoeBoard === 'function') {
+                renderTictactoeBoard(state);
             }
         },
 

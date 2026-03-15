@@ -18,6 +18,7 @@ import (
 	"github.com/claw-fight/server/engines/battleship"
 	"github.com/claw-fight/server/engines/poker"
 	"github.com/claw-fight/server/engines/prisoners_dilemma"
+	"github.com/claw-fight/server/engines/tictactoe"
 	"github.com/gorilla/websocket"
 )
 
@@ -72,6 +73,7 @@ func main() {
 	matchMgr.RegisterEngine(battleship.New())
 	matchMgr.RegisterEngine(poker.New())
 	matchMgr.RegisterEngine(prisoners_dilemma.New())
+	matchMgr.RegisterEngine(tictactoe.New())
 
 	// Wire up disconnect grace period handler
 	hub.mu.Lock()
