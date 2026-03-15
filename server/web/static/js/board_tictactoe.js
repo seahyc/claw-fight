@@ -1,31 +1,28 @@
 /**
- * board_tictactoe.js - Tic Tac Toe renderer
+ * board_tictactoe.js - Tic Tac Toe renderer (dynamic board size)
  */
 (function() {
     'use strict';
 
-    var winLines = [
-        // Rows
-        [[0,0],[0,1],[0,2]],
-        [[1,0],[1,1],[1,2]],
-        [[2,0],[2,1],[2,2]],
-        // Columns
-        [[0,0],[1,0],[2,0]],
-        [[0,1],[1,1],[2,1]],
-        [[0,2],[1,2],[2,2]],
-        // Diagonals
-        [[0,0],[1,1],[2,2]],
-        [[0,2],[1,1],[2,0]]
-    ];
-
-    function findWinningLine(board) {
-        for (var i = 0; i < winLines.length; i++) {
-            var line = winLines[i];
-            var a = board[line[0][0]][line[0][1]];
-            var b = board[line[1][0]][line[1][1]];
-            var c = board[line[2][0]][line[2][1]];
-            if (a && a === b && b === c) {
-                return { mark: a, cells: line };
+    function findWinningLine(board, winLen) {
+        var size = board.length;
+        var dirs = [[0,1],[1,0],[1,1],[1,-1]];
+        for (var r = 0; r < size; r++) {
+            for (var c = 0; c < size; c++) {
+                var mark = board[r][c];
+                if (!mark) continue;
+                for (var d = 0; d < dirs.length; d++) {
+                    var dr = dirs[d][0], dc = dirs[d][1];
+                    var endR = r + dr * (winLen - 1), endC = c + dc * (winLen - 1);
+                    if (endR < 0 || endR >= size || endC < 0 || endC >= size) continue;
+                    var cells = [[r, c]];
+                    var won = true;
+                    for (var k = 1; k < winLen; k++) {
+                        if (board[r + dr * k][c + dc * k] !== mark) { won = false; break; }
+                        cells.push([r + dr * k, c + dc * k]);
+                    }
+                    if (won) return { mark: mark, cells: cells };
+                }
             }
         }
         return null;
@@ -34,16 +31,17 @@
     window.renderTictactoeBoard = function(state) {
         var boardEl = document.getElementById('game-board');
         if (!boardEl || !state) return;
-
         boardEl.innerHTML = '';
 
         var container = document.createElement('div');
         container.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;';
 
-        var board = state.board || [['','',''],['','',''],['','','']];
-        var win = findWinningLine(board);
+        var board = state.board || [['','','','',''],['','','','',''],['','','','',''],['','','','',''],['','','','','']];
+        var size = board.length;
+        var winLen = state.win_length || 4;
+        var totalCells = size * size;
+        var win = findWinningLine(board, winLen);
 
-        // Build winning cell set for highlighting
         var winCells = {};
         if (win) {
             for (var w = 0; w < win.cells.length; w++) {
@@ -51,7 +49,6 @@
             }
         }
 
-        // Turn info
         var p1Name = (window.MatchViewer && MatchViewer.players.p1) || 'Player 1';
         var p2Name = (window.MatchViewer && MatchViewer.players.p2) || 'Player 2';
 
@@ -59,57 +56,54 @@
         turnInfo.style.cssText = 'font-size:1.1em;color:var(--text-muted,#aaa);margin-bottom:8px;';
         if (win) {
             var winnerName = win.mark === 'X' ? p1Name : p2Name;
-            var winColor = win.mark === 'X' ? '#4dabf7' : '#e94560';
+            var winColor = win.mark === 'X' ? '#6aaeeb' : '#e86a7a';
             turnInfo.innerHTML = '<span style="color:' + winColor + ';font-weight:bold;">' + winnerName + ' (' + win.mark + ')</span> wins!';
-        } else if (state.move_count >= 9) {
+        } else if (state.move_count >= totalCells) {
             turnInfo.textContent = 'Draw!';
-            turnInfo.style.color = '#ffd43b';
+            turnInfo.style.color = 'var(--gold)';
         } else {
             var currentName = state.current_player === 'X' ? p1Name : p2Name;
-            var currentColor = state.current_player === 'X' ? '#4dabf7' : '#e94560';
+            var currentColor = state.current_player === 'X' ? '#6aaeeb' : '#e86a7a';
             turnInfo.innerHTML = '<span style="color:' + currentColor + '">' + currentName + '</span>\'s turn (' + state.current_player + ')';
         }
         container.appendChild(turnInfo);
 
-        // Grid
+        var cellSize = size <= 3 ? 100 : (size <= 5 ? 70 : 50);
         var grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:min(320px,80vw);aspect-ratio:1;';
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(' + size + ',' + cellSize + 'px);grid-template-rows:repeat(' + size + ',' + cellSize + 'px);gap:4px;background:var(--border-light);border-radius:var(--radius-md);overflow:hidden;';
 
-        for (var r = 0; r < 3; r++) {
-            for (var c = 0; c < 3; c++) {
+        for (var r = 0; r < size; r++) {
+            for (var c = 0; c < size; c++) {
                 var cell = document.createElement('div');
                 var isWinCell = winCells[r + ',' + c];
                 cell.style.cssText = 'display:flex;align-items:center;justify-content:center;' +
-                    'background:' + (isWinCell ? 'rgba(255,215,0,0.15)' : 'rgba(255,255,255,0.05)') + ';' +
-                    'border-radius:8px;font-size:3em;font-weight:bold;cursor:default;' +
-                    'transition:background 0.2s;aspect-ratio:1;' +
-                    (isWinCell ? 'box-shadow:0 0 12px rgba(255,215,0,0.3);' : '');
+                    'background:' + (isWinCell ? 'rgba(232,184,74,0.2)' : 'var(--bg-card)') + ';' +
+                    'font-size:' + (cellSize > 60 ? '2rem' : '1.5rem') + ';font-weight:800;cursor:default;' +
+                    'transition:background 0.15s;' +
+                    (isWinCell ? 'box-shadow:0 0 12px rgba(232,184,74,0.3);' : '');
 
                 var mark = board[r][c];
                 if (mark === 'X') {
                     cell.textContent = 'X';
-                    cell.style.color = '#4dabf7';
+                    cell.style.color = '#6aaeeb';
                 } else if (mark === 'O') {
                     cell.textContent = 'O';
-                    cell.style.color = '#e94560';
+                    cell.style.color = '#e86a7a';
                 }
-
                 grid.appendChild(cell);
             }
         }
         container.appendChild(grid);
 
-        // Move count
         var moveInfo = document.createElement('div');
-        moveInfo.style.cssText = 'font-size:0.9em;color:var(--text-muted,#888);';
-        moveInfo.textContent = 'Moves: ' + (state.move_count || 0) + ' / 9';
+        moveInfo.style.cssText = 'font-size:0.9em;color:var(--text-muted);';
+        moveInfo.textContent = 'Moves: ' + (state.move_count || 0) + ' / ' + totalCells + '  |  ' + winLen + ' in a row to win';
         container.appendChild(moveInfo);
 
-        // Player legend
         var legend = document.createElement('div');
         legend.style.cssText = 'display:flex;gap:24px;font-size:0.95em;margin-top:8px;';
-        legend.innerHTML = '<span style="color:#4dabf7"><strong>X</strong> ' + p1Name + '</span>' +
-            '<span style="color:#e94560"><strong>O</strong> ' + p2Name + '</span>';
+        legend.innerHTML = '<span style="color:#6aaeeb"><strong>X</strong> ' + p1Name + '</span>' +
+            '<span style="color:#e86a7a"><strong>O</strong> ' + p2Name + '</span>';
         container.appendChild(legend);
 
         boardEl.appendChild(container);

@@ -6,6 +6,12 @@ import (
 	"github.com/claw-fight/server/engines"
 )
 
+const (
+	boardSize = 5
+	winLength = 4
+	totalCells = boardSize * boardSize
+)
+
 type Engine struct{}
 
 func New() *Engine {
@@ -17,11 +23,12 @@ func (e *Engine) MinPlayers() int { return 2 }
 func (e *Engine) MaxPlayers() int { return 2 }
 
 func (e *Engine) DescribeRules() string {
-	return "Tic Tac Toe on a 3x3 grid. Player 1 is X, Player 2 is O. " +
-		"Players alternate turns placing their mark on an empty cell. " +
-		"Action: mark with data {\"position\": 0-8} where 0=top-left, 8=bottom-right (left-to-right, top-to-bottom). " +
-		"First to get three in a row (horizontal, vertical, or diagonal) wins. " +
-		"If all 9 cells are filled with no winner, it's a draw."
+	return fmt.Sprintf("Tic Tac Toe on a %dx%d grid. Player 1 is X, Player 2 is O. "+
+		"Players alternate turns placing their mark on an empty cell. "+
+		"Action: mark with data {\"position\": 0-%d} where 0=top-left, %d=bottom-right (left-to-right, top-to-bottom). "+
+		"First to get %d in a row (horizontal, vertical, or diagonal) wins. "+
+		"If all %d cells are filled with no winner, it's a draw.",
+		boardSize, boardSize, totalCells-1, totalCells-1, winLength, totalCells)
 }
 
 func (e *Engine) InitGame(players []engines.PlayerID, options map[string]any) (*engines.GameState, error) {
@@ -29,11 +36,10 @@ func (e *Engine) InitGame(players []engines.PlayerID, options map[string]any) (*
 		return nil, fmt.Errorf("tictactoe requires exactly 2 players")
 	}
 
-	// Initialize empty 3x3 board as [][]string
-	board := make([]any, 3)
-	for i := range 3 {
-		row := make([]any, 3)
-		for j := range 3 {
+	board := make([]any, boardSize)
+	for i := range boardSize {
+		row := make([]any, boardSize)
+		for j := range boardSize {
 			row[j] = ""
 		}
 		board[i] = row
@@ -47,7 +53,7 @@ func (e *Engine) InitGame(players []engines.PlayerID, options map[string]any) (*
 			"move_count": 0,
 		},
 		Players:     players,
-		CurrentTurn: players[0], // Player 1 (X) goes first
+		CurrentTurn: players[0],
 	}, nil
 }
 
@@ -66,12 +72,12 @@ func (e *Engine) ValidateAction(state *engines.GameState, player engines.PlayerI
 	}
 
 	pos := toInt(posRaw)
-	if pos < 0 || pos > 8 {
-		return fmt.Errorf("position must be 0-8, got %d", pos)
+	if pos < 0 || pos >= totalCells {
+		return fmt.Errorf("position must be 0-%d, got %d", totalCells-1, pos)
 	}
 
 	board := getBoard(state)
-	row, col := pos/3, pos%3
+	row, col := pos/boardSize, pos%boardSize
 	if board[row][col] != "" {
 		return fmt.Errorf("position %d is already occupied", pos)
 	}
@@ -81,15 +87,13 @@ func (e *Engine) ValidateAction(state *engines.GameState, player engines.PlayerI
 
 func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, action engines.Action) (*engines.ActionResult, error) {
 	pos := toInt(action.Data["position"])
-	row, col := pos/3, pos%3
+	row, col := pos/boardSize, pos%boardSize
 
-	// Determine mark: Player 1 = X, Player 2 = O
 	mark := "X"
 	if player == state.Players[1] {
 		mark = "O"
 	}
 
-	// Place the mark
 	board := state.Data["board"].([]any)
 	boardRow := board[row].([]any)
 	boardRow[col] = mark
@@ -98,7 +102,6 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 	state.Data["move_count"] = moveCount
 	state.TurnNumber = moveCount
 
-	// Switch turn to other player
 	if player == state.Players[0] {
 		state.CurrentTurn = state.Players[1]
 	} else {
@@ -120,7 +123,6 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID) *engines.PlayerView {
 	board := getBoard(state)
 
-	// Determine whose turn and what mark
 	currentMark := "X"
 	if state.CurrentTurn == state.Players[1] {
 		currentMark = "O"
@@ -128,10 +130,9 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 
 	yourTurn := state.CurrentTurn == player
 
-	// Available positions
 	var available []int
-	for i := range 9 {
-		r, c := i/3, i%3
+	for i := range totalCells {
+		r, c := i/boardSize, i%boardSize
 		if board[r][c] == "" {
 			available = append(available, i)
 		}
@@ -142,11 +143,10 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		availableActions = []string{"mark"}
 	}
 
-	// Convert board to [][]string for the view
-	viewBoard := make([][]string, 3)
-	for i := range 3 {
-		viewBoard[i] = make([]string, 3)
-		for j := range 3 {
+	viewBoard := make([][]string, boardSize)
+	for i := range boardSize {
+		viewBoard[i] = make([]string, boardSize)
+		for j := range boardSize {
 			viewBoard[i][j] = board[i][j]
 		}
 	}
@@ -159,9 +159,11 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		AvailableActions: availableActions,
 		TurnNumber:       state.TurnNumber,
 		GameSpecific: map[string]any{
-			"current_player":      currentMark,
+			"board_size":          boardSize,
+			"win_length":         winLength,
+			"current_player":     currentMark,
 			"available_positions": available,
-			"move_count":          toInt(state.Data["move_count"]),
+			"move_count":         toInt(state.Data["move_count"]),
 		},
 	}
 }
@@ -169,45 +171,51 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
 	board := getBoard(state)
 
-	// Check all winning lines
-	lines := [][3][2]int{
-		// Rows
-		{{0, 0}, {0, 1}, {0, 2}},
-		{{1, 0}, {1, 1}, {1, 2}},
-		{{2, 0}, {2, 1}, {2, 2}},
-		// Columns
-		{{0, 0}, {1, 0}, {2, 0}},
-		{{0, 1}, {1, 1}, {2, 1}},
-		{{0, 2}, {1, 2}, {2, 2}},
-		// Diagonals
-		{{0, 0}, {1, 1}, {2, 2}},
-		{{0, 2}, {1, 1}, {2, 0}},
-	}
+	// Check all possible lines of winLength
+	directions := [][2]int{{0, 1}, {1, 0}, {1, 1}, {1, -1}} // horizontal, vertical, diagonal, anti-diagonal
 
-	for _, line := range lines {
-		a := board[line[0][0]][line[0][1]]
-		b := board[line[1][0]][line[1][1]]
-		c := board[line[2][0]][line[2][1]]
-		if a != "" && a == b && b == c {
-			// We have a winner
-			var winner engines.PlayerID
-			if a == "X" {
-				winner = state.Players[0]
-			} else {
-				winner = state.Players[1]
+	for r := range boardSize {
+		for c := range boardSize {
+			if board[r][c] == "" {
+				continue
 			}
-			state.Phase = "finished"
-			return &engines.GameResult{
-				Finished: true,
-				Winner:   winner,
-				Reason:   fmt.Sprintf("%s wins with three %s in a row", string(winner), a),
+			mark := board[r][c]
+			for _, d := range directions {
+				// Check if winLength cells in this direction all match
+				if r+d[0]*(winLength-1) < 0 || r+d[0]*(winLength-1) >= boardSize {
+					continue
+				}
+				if c+d[1]*(winLength-1) < 0 || c+d[1]*(winLength-1) >= boardSize {
+					continue
+				}
+				won := true
+				for k := 1; k < winLength; k++ {
+					if board[r+d[0]*k][c+d[1]*k] != mark {
+						won = false
+						break
+					}
+				}
+				if won {
+					var winner engines.PlayerID
+					if mark == "X" {
+						winner = state.Players[0]
+					} else {
+						winner = state.Players[1]
+					}
+					state.Phase = "finished"
+					return &engines.GameResult{
+						Finished: true,
+						Winner:   winner,
+						Reason:   fmt.Sprintf("%s wins with %d %s in a row!", string(winner), winLength, mark),
+					}
+				}
 			}
 		}
 	}
 
-	// Check draw: all cells filled
+	// Check draw
 	moveCount := toInt(state.Data["move_count"])
-	if moveCount >= 9 {
+	if moveCount >= totalCells {
 		state.Phase = "finished"
 		return &engines.GameResult{
 			Finished: true,
@@ -221,8 +229,8 @@ func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
 
 // --- Helpers ---
 
-func getBoard(state *engines.GameState) [3][3]string {
-	var board [3][3]string
+func getBoard(state *engines.GameState) [boardSize][boardSize]string {
+	var board [boardSize][boardSize]string
 	raw := state.Data["board"].([]any)
 	for i, rowRaw := range raw {
 		row := rowRaw.([]any)

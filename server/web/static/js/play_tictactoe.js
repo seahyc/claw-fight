@@ -4,8 +4,6 @@
 (function() {
     'use strict';
 
-    var playerState = null;
-
     // Override spectator renderer
     var origRender = window.renderTictactoeBoard;
     window.renderTictactoeBoard = function(state) {
@@ -19,7 +17,6 @@
     document.addEventListener('play_state_update', function(e) {
         var state = e.detail;
         if (!state || window.PlayMatch.gameType !== 'tictactoe') return;
-        playerState = state;
         renderPlayerView(state);
     });
 
@@ -33,7 +30,7 @@
             return;
         }
 
-        var gs = state.game_specific || state.game_state || {};
+        var gs = state.game_specific || {};
         var container = document.createElement('div');
         container.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1rem;padding:1rem;';
 
@@ -41,9 +38,11 @@
         var p2Name = (window.MatchViewer && MatchViewer.players.p2) || 'Player 2';
         var myNum = window.PlayMatch.myPlayerNum;
         var myMark = myNum === 1 ? 'X' : 'O';
-        var oppMark = myNum === 1 ? 'O' : 'X';
         var myName = myNum === 1 ? p1Name : p2Name;
         var oppName = myNum === 1 ? p2Name : p1Name;
+
+        var board = state.board || [];
+        var size = gs.board_size || board.length || 5;
 
         // Info bar
         var info = document.createElement('div');
@@ -57,18 +56,17 @@
         }
         container.appendChild(info);
 
-        // Board
-        // Board can be at state.board (PlayerView) or gs.board (spectator)
-        var board = state.board || gs.board || [['','',''],['','',''],['','','']];
+        // Board grid
+        var cellSize = size <= 3 ? 100 : (size <= 5 ? 70 : 50);
         var grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,100px);grid-template-rows:repeat(3,100px);gap:4px;background:var(--border-light);border-radius:var(--radius-md);overflow:hidden;';
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(' + size + ',' + cellSize + 'px);grid-template-rows:repeat(' + size + ',' + cellSize + 'px);gap:4px;background:var(--border-light);border-radius:var(--radius-md);overflow:hidden;';
 
-        for (var r = 0; r < 3; r++) {
-            for (var c = 0; c < 3; c++) {
+        for (var r = 0; r < size; r++) {
+            for (var c = 0; c < size; c++) {
                 var cell = document.createElement('button');
-                var pos = r * 3 + c;
-                var mark = board[r][c];
-                cell.style.cssText = 'display:flex;align-items:center;justify-content:center;background:var(--bg-card);border:none;font-size:2.5rem;font-weight:800;cursor:default;transition:all 0.15s;';
+                var pos = r * size + c;
+                var mark = (board[r] && board[r][c]) || '';
+                cell.style.cssText = 'display:flex;align-items:center;justify-content:center;background:var(--bg-card);border:none;font-size:' + (cellSize > 60 ? '2rem' : '1.5rem') + ';font-weight:800;cursor:default;transition:all 0.15s;';
 
                 if (mark === 'X') {
                     cell.textContent = 'X';
@@ -94,7 +92,6 @@
                         sendMark(parseInt(this.dataset.pos));
                     });
                 }
-
                 grid.appendChild(cell);
             }
         }
@@ -104,7 +101,8 @@
         var legend = document.createElement('div');
         legend.style.cssText = 'display:flex;gap:1.5rem;font-size:0.9rem;color:var(--text-muted);';
         legend.innerHTML = '<span><strong style="color:#6aaeeb">X</strong> = ' + p1Name + '</span>' +
-            '<span><strong style="color:#e86a7a">O</strong> = ' + p2Name + '</span>';
+            '<span><strong style="color:#e86a7a">O</strong> = ' + p2Name + '</span>' +
+            '<span>' + (gs.win_length || 4) + ' in a row to win</span>';
         container.appendChild(legend);
 
         boardEl.appendChild(container);

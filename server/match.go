@@ -1214,11 +1214,11 @@ func (mm *MatchManager) buildTictactoeSpectatorState(m *Match) map[string]any {
 	data := m.State.Data
 	rawBoard := data["board"].([]any)
 
-	// Convert to 3x3 string array
-	board := make([][]string, 3)
+	boardSize := len(rawBoard)
+	board := make([][]string, boardSize)
 	for i, rowRaw := range rawBoard {
 		row := rowRaw.([]any)
-		board[i] = make([]string, 3)
+		board[i] = make([]string, len(row))
 		for j, cell := range row {
 			if s, ok := cell.(string); ok {
 				board[i][j] = s
@@ -1235,6 +1235,7 @@ func (mm *MatchManager) buildTictactoeSpectatorState(m *Match) map[string]any {
 
 	return map[string]any{
 		"board":          board,
+		"board_size":     boardSize,
 		"current_player": currentPlayer,
 		"move_count":     toInt(data["move_count"]),
 	}
