@@ -58,4 +58,8 @@
 <script src="/static/js/board_prisoners.js"></script>
 <script src="/static/js/play_prisoners.js"></script>
 {{end}}
+{{if eq .GameType "tictactoe"}}
+<script src="/static/js/board_tictactoe.js"></script>
+<script src="/static/js/play_tictactoe.js"></script>
+{{end}}
 {{end}}
