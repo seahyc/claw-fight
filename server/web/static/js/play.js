@@ -10,9 +10,7 @@
     var nameInput = document.getElementById('player-name');
     var registerBtn = document.getElementById('register-btn');
     var registerStatus = document.getElementById('register-status');
-    var joinPanel = document.getElementById('join-panel');
-    var createPanel = document.getElementById('create-panel');
-    var openPanel = document.getElementById('open-panel');
+    var gameActions = document.getElementById('game-actions');
     var joinCode = document.getElementById('join-code');
     var joinBtn = document.getElementById('join-btn');
     var joinStatus = document.getElementById('join-status');
@@ -31,12 +29,10 @@
     }
 
     function showLoggedIn() {
-        registerStatus.textContent = 'Registered as: ' + playerName + ' (' + playerId.slice(0, 8) + '...)';
+        registerStatus.textContent = 'Playing as ' + playerName;
         registerStatus.className = 'play-status success';
         registerBtn.textContent = 'Update';
-        joinPanel.style.display = '';
-        createPanel.style.display = '';
-        openPanel.style.display = '';
+        gameActions.style.display = '';
         fetchOpenMatches();
     }
 
@@ -67,7 +63,7 @@
             showLoggedIn();
         })
         .catch(function(err) {
-            registerStatus.textContent = 'Registration failed: ' + err.message;
+            registerStatus.textContent = 'Failed: ' + err.message;
             registerStatus.className = 'play-status error';
         })
         .finally(function() { registerBtn.disabled = false; });
@@ -105,7 +101,7 @@
     createBtn.addEventListener('click', function() {
         var gt = gameType.value;
         createBtn.disabled = true;
-        createStatus.textContent = 'Creating match...';
+        createStatus.textContent = 'Creating...';
         createStatus.className = 'play-status';
         fetch('/api/match', {
             method: 'POST',
@@ -117,12 +113,10 @@
             return r.json();
         })
         .then(function(data) {
-            createStatus.textContent = 'Match created! Code: ' + data.code + ' - Redirecting...';
-            createStatus.className = 'play-status success';
             window.location.href = '/play/' + data.match_id;
         })
         .catch(function(err) {
-            createStatus.textContent = 'Create failed: ' + err.message;
+            createStatus.textContent = 'Failed: ' + err.message;
             createStatus.className = 'play-status error';
         })
         .finally(function() { createBtn.disabled = false; });
@@ -133,14 +127,13 @@
             .then(function(r) { return r.json(); })
             .then(function(matches) {
                 if (!matches || matches.length === 0) {
-                    openMatches.innerHTML = '<p class="muted">No open matches</p>';
+                    openMatches.innerHTML = '';
                     return;
                 }
                 openMatches.innerHTML = matches.map(function(m) {
                     return '<div class="open-match-card">' +
-                        '<span class="open-match-type">' + (m.game_type || 'Unknown') + '</span>' +
+                        '<span class="open-match-type">' + (m.game_type || '?') + '</span>' +
                         '<span class="open-match-code">' + (m.code || '') + '</span>' +
-                        '<span class="open-match-player">' + (m.player1 || 'Waiting...') + '</span>' +
                         '<button class="btn btn-small open-match-join" data-code="' + (m.code || '') + '">Join</button>' +
                     '</div>';
                 }).join('');
@@ -152,12 +145,9 @@
                     });
                 });
             })
-            .catch(function() {
-                openMatches.innerHTML = '<p class="muted">Failed to load</p>';
-            });
+            .catch(function() {});
     }
 
-    // Auto-refresh open matches every 5 seconds
     if (playerId) {
         setInterval(fetchOpenMatches, 5000);
     }

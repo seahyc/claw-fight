@@ -1,36 +1,22 @@
 {{define "content"}}
-<div class="container">
-    <section class="hero" style="padding: 2rem 0;">
-        <h1 class="section-title">Play</h1>
-        <p class="hero-tagline" style="font-size: 0.7rem;">Challenge AI agents or other humans</p>
+<div class="container" style="max-width:560px;">
+    <section class="hero" style="padding:2rem 0 1rem;text-align:center;">
+        <h1 class="section-title" style="justify-content:center;">Play</h1>
     </section>
 
-    <div class="play-landing">
-        <!-- Player Registration -->
-        <div class="play-panel" id="register-panel">
-            <h2 class="panel-title">Your Identity</h2>
-            <div class="play-form-row">
-                <input type="text" id="player-name" class="pixel-input" placeholder="Enter your name" maxlength="24">
-                <button id="register-btn" class="btn btn-primary">Register</button>
-            </div>
-            <p id="register-status" class="play-status"></p>
+    <div class="play-panel">
+        <!-- Name row -->
+        <div class="play-form-row" style="margin-bottom:1rem;">
+            <input type="text" id="player-name" class="pixel-input" placeholder="Your name" maxlength="24" style="flex:1;">
+            <button id="register-btn" class="btn btn-primary">Go</button>
         </div>
+        <p id="register-status" class="play-status" style="margin-bottom:1rem;"></p>
 
-        <!-- Join by Code -->
-        <div class="play-panel" id="join-panel" style="display:none;">
-            <h2 class="panel-title">Join Match</h2>
-            <div class="play-form-row">
-                <input type="text" id="join-code" class="pixel-input" placeholder="Enter join code" maxlength="10" style="text-transform:uppercase;">
-                <button id="join-btn" class="btn btn-primary">Join</button>
-            </div>
-            <p id="join-status" class="play-status"></p>
-        </div>
-
-        <!-- Create Match -->
-        <div class="play-panel" id="create-panel" style="display:none;">
-            <h2 class="panel-title">Create Match</h2>
-            <div class="play-form-row">
-                <select id="game-type" class="pixel-select">
+        <!-- Game actions (hidden until registered) -->
+        <div id="game-actions" style="display:none;">
+            <!-- Create -->
+            <div class="play-form-row" style="margin-bottom:0.75rem;">
+                <select id="game-type" class="pixel-select" style="flex:1;">
                     <option value="battleship">Battleship</option>
                     <option value="poker">Poker</option>
                     <option value="prisoners_dilemma">Prisoner's Dilemma</option>
@@ -39,17 +25,19 @@
                 <button id="create-btn" class="btn btn-primary">Create</button>
             </div>
             <p id="create-status" class="play-status"></p>
-        </div>
 
-        <!-- Open Matches -->
-        <div class="play-panel" id="open-panel" style="display:none;">
-            <h2 class="panel-title">Open Matches</h2>
-            <div id="open-matches" class="open-matches-list">
-                <p class="muted">Loading...</p>
+            <!-- Join -->
+            <div class="play-form-row" style="margin-bottom:0.75rem;">
+                <input type="text" id="join-code" class="pixel-input" placeholder="Join code" maxlength="10" style="flex:1;text-transform:uppercase;">
+                <button id="join-btn" class="btn btn-secondary">Join</button>
             </div>
+            <p id="join-status" class="play-status"></p>
+
+            <!-- Open matches -->
+            <div id="open-matches" class="open-matches-list" style="margin-top:0.75rem;"></div>
         </div>
     </div>
 </div>
 
-<script src="/static/js/play.js"></script>
+<script src="/static/js/play.js?v=3"></script>
 {{end}}

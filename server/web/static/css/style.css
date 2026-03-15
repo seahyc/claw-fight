@@ -359,18 +359,14 @@ h1, h2, h3, h4 {
     text-align: center;
     padding: 0.5rem;
     margin-top: 0.75rem;
-    background: var(--orange);
-    color: #fff !important;
-    font-weight: 700;
-    font-size: 0.85rem;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition);
+    color: var(--text-muted) !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+    transition: color var(--transition);
 }
 
 .game-card-play:hover {
-    background: var(--orange-hover);
-    transform: translateY(-1px);
-    color: #fff !important;
+    color: var(--orange) !important;
 }
 
 .game-card-cmd code {
