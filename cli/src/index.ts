@@ -4,6 +4,9 @@ import os from "os";
 import { fetchApi } from "./api.js";
 import { getServerUrl, requirePlayerID, requireMatchID, output, sanitizeEvent } from "./session.js";
 import WebSocket from "ws";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
+const pkg = _require("../package.json") as { version: string };
 
 const program = new Command();
 
@@ -369,4 +372,321 @@ program
     }
   });
 
+// ---------------------------------------------------------------------------
+// Feature 1: Auto-update check
+// ---------------------------------------------------------------------------
+
+async function checkForUpdates() {
+  // Skip if running via npx (always latest)
+  if (process.env.npm_execpath?.includes('npx') || process.env._?.includes('npx')) return;
+
+  try {
+    const current = pkg.version;
+    const res = await fetch('https://registry.npmjs.org/claw-fight/latest', { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return;
+    const data = await res.json() as { version: string };
+    const latest = data.version;
+    if (latest === current) return;
+
+    process.stderr.write(`Updating claw-fight ${current} → ${latest}...\n`);
+    const { execSync } = await import('child_process');
+    execSync('npm install -g claw-fight@latest', { stdio: 'inherit' });
+
+    // Re-exec with updated version
+    execSync(process.argv.slice(1).join(' '), { stdio: 'inherit' });
+    process.exit(0);
+  } catch {
+    // Silent fail - don't block CLI on network errors
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feature 2: `next` command
+// ---------------------------------------------------------------------------
+
+function parseAction(doArg: string): { type: string; data: Record<string, unknown> } {
+  const parts = doArg.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
+  const rest = parts.slice(1);
+
+  switch (cmd) {
+    case 'fold':
+    case 'check':
+    case 'call':
+    case 'all_in':
+      return { type: cmd, data: {} };
+
+    case 'raise':
+    case 'bet':
+      return { type: cmd, data: { amount: parseInt(rest[0], 10) } };
+
+    case 'fire':
+      return { type: 'fire', data: { target: rest[0] } };
+
+    case 'mark':
+      return { type: 'mark', data: { position: parseInt(rest[0], 10) } };
+
+    case 'cooperate':
+      return { type: 'choose', data: { choice: 'cooperate' } };
+
+    case 'defect':
+      return { type: 'choose', data: { choice: 'defect' } };
+
+    case 'place_ships': {
+      // parse "carrier:A1-A5 battleship:C3-F3 ..."
+      const ships: Record<string, string> = {};
+      for (const token of rest) {
+        const [name, coords] = token.split(':');
+        if (name && coords) ships[name] = coords;
+      }
+      return { type: 'place_ships', data: { ships } };
+    }
+
+    default:
+      return { type: cmd, data: {} };
+  }
+}
+
+function renderBoard(event: Record<string, unknown>): string {
+  const lines: string[] = [];
+  const gameType = (event.game_type as string | undefined) || '';
+  const phase = (event.phase as string | undefined) || '';
+  const gs = (event.game_specific as Record<string, unknown> | undefined) || {};
+
+  const formatGameType = (t: string) => {
+    if (t === 'prisoners_dilemma') return "PRISONER'S DILEMMA";
+    return t.replace(/_/g, ' ').toUpperCase();
+  };
+
+  // Build header
+  let header = formatGameType(gameType);
+  if (phase === 'setup') {
+    header += '  •  Setup phase';
+  } else if (phase === 'play' || phase === 'fire') {
+    const turn = gs.turn_number as number | undefined;
+    const hand = gs.hand_number as number | undefined;
+    const handTotal = gs.total_hands as number | undefined;
+    const roundNum = gs.round as number | undefined;
+    const subPhase = gs.sub_phase as string | undefined;
+    if (hand !== undefined && handTotal !== undefined) {
+      header += `  •  Hand ${hand}/${handTotal}`;
+    } else if (roundNum !== undefined) {
+      header += `  •  Round ${roundNum}`;
+    } else if (turn !== undefined) {
+      header += `  •  Turn ${turn}`;
+    }
+    if (subPhase) header += `  •  ${subPhase.charAt(0).toUpperCase() + subPhase.slice(1)}`;
+  }
+
+  lines.push(header);
+  lines.push('');
+
+  const playerRole = (event.player_role as string | undefined) || 'p1';
+  const opponentRole = playerRole === 'p1' ? 'p2' : 'p1';
+
+  if (gameType === 'poker') {
+    const community = gs.community_cards as string[] | undefined;
+    const hand = gs.hand as string[] | undefined;
+    const pot = gs.pot as number | undefined;
+    const chips = gs.chips as Record<string, number> | undefined;
+    const playerNames = gs.player_names as Record<string, string> | undefined;
+
+    if (community && community.length > 0) {
+      lines.push(`  Community: ${community.join('  ')}`);
+    }
+    if (hand && hand.length > 0) {
+      lines.push(`  Your hand: ${hand.join('  ')}`);
+    }
+
+    if (pot !== undefined || chips) {
+      const parts: string[] = [];
+      if (pot !== undefined) parts.push(`Pot: ${pot}`);
+      if (chips) {
+        const myChips = chips[playerRole];
+        const oppChips = chips[opponentRole];
+        const myLabel = playerNames?.[playerRole] || playerRole.toUpperCase();
+        const oppLabel = playerNames?.[opponentRole] || opponentRole.toUpperCase();
+        if (myChips !== undefined) parts.push(`You (${myLabel}): ${myChips} chips`);
+        if (oppChips !== undefined) parts.push(`Opponent (${oppLabel}): ${oppChips} chips`);
+      }
+      lines.push(`  ${parts.join('  |  ')}`);
+    }
+  } else if (gameType === 'battleship') {
+    if (phase === 'setup') {
+      lines.push('  Place your 5 ships. Ships: carrier(5), battleship(4), cruiser(3), submarine(3), destroyer(2)');
+      lines.push('  Coordinates: A1-J10. Ships must be horizontal or vertical.');
+    } else {
+      // Show hit/miss summary from board if available
+      const board = event.board as Record<string, unknown> | undefined;
+      if (board) {
+        const myHits = board.opponent_hits as string[] | undefined;  // hits on opponent's board
+        const oppHits = board.my_hits as string[] | undefined;       // hits on our board
+        if (myHits && myHits.length > 0) {
+          lines.push(`  Your hits: ${myHits.join(', ')}`);
+        }
+        if (oppHits && oppHits.length > 0) {
+          lines.push(`  Opponent hits on you: ${oppHits.join(', ')}`);
+        }
+      }
+      lines.push('  Available: fire at any unrevealed coordinate (A1-J10)');
+    }
+  } else if (gameType === 'prisoners_dilemma') {
+    const scores = gs.scores as Record<string, number> | undefined;
+    if (scores) {
+      const myScore = scores[playerRole];
+      const oppScore = scores[opponentRole];
+      if (myScore !== undefined && oppScore !== undefined) {
+        lines.push(`  Scores: You ${myScore}  |  Opponent ${oppScore}`);
+      }
+    }
+  }
+
+  lines.push('');
+
+  // Generate runnable action commands
+  const availableActions = (event.available_actions as string[] | undefined) || [];
+  const actionsWithParams = new Set(['bet', 'raise', 'fire', 'mark']);
+
+  if (gameType === 'battleship' && phase === 'setup') {
+    lines.push('  npx claw-fight next --do "place_ships carrier:A1-A5 battleship:C3-F3 cruiser:E5-E7 submarine:G1-G3 destroyer:I9-I10"');
+  } else {
+    for (const action of availableActions) {
+      if (actionsWithParams.has(action)) {
+        if (action === 'fire') {
+          lines.push(`  npx claw-fight next --do "fire B5"`);
+          lines.push(`  npx claw-fight next --do "fire C7"`);
+        } else if (action === 'bet' || action === 'raise') {
+          lines.push(`  npx claw-fight next --do "${action} <amount>"`);
+        } else if (action === 'mark') {
+          lines.push(`  npx claw-fight next --do "mark <position>"`);
+        }
+      } else {
+        lines.push(`  npx claw-fight next --do "${action}"`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+program
+  .command('next')
+  .description('Wait for your turn and print the board state with runnable action commands')
+  .option('--match <id>', 'Match ID (or set CLAW_FIGHT_MATCH_ID)')
+  .option('--do <action>', 'Submit an action first, then poll for next turn')
+  .action(async (opts) => {
+    const playerID = requirePlayerID();
+    const serverUrl = getServerUrl(program.opts());
+    const matchId = opts.match || process.env.CLAW_FIGHT_MATCH_ID;
+
+    if (!matchId) {
+      process.stderr.write(
+        'Error: No match ID. Set CLAW_FIGHT_MATCH_ID or pass --match <id>.\n' +
+        'To start a game: npx claw-fight play <game_type>\n'
+      );
+      process.exit(1);
+    }
+
+    // Submit action if --do was provided
+    if (opts.do) {
+      const parsed = parseAction(opts.do);
+      try {
+        await fetchApi(serverUrl, 'POST', `/api/match/${matchId}/action`, {
+          player_id: playerID,
+          action_type: parsed.type,
+          action_data: parsed.data,
+        });
+        process.stderr.write(`✓ ${opts.do}\n`);
+      } catch (err) {
+        process.stderr.write(`Error submitting action: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(1);
+      }
+    }
+
+    process.stderr.write('Waiting for your turn...\n');
+
+    // Poll loop
+    // 6-minute upper timeout once game is active; no upper timeout waiting for opponent to join
+    let gameActive = false;
+    const SIX_MINUTES = 6 * 60 * 1000;
+    const startTime = Date.now();
+
+    while (true) {
+      // Check 6-min timeout if game is active
+      if (gameActive && Date.now() - startTime > SIX_MINUTES) {
+        process.stderr.write('Timeout: no turn received within 6 minutes.\n');
+        process.exit(1);
+      }
+
+      let response: { events: Record<string, unknown>[] };
+      try {
+        response = await fetchApi(
+          serverUrl,
+          'GET',
+          `/api/match/${matchId}/poll?player_id=${playerID}&timeout=55`
+        ) as { events: Record<string, unknown>[] };
+      } catch (err) {
+        process.stderr.write(`Poll error: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(1);
+      }
+
+      const events = response.events ?? [];
+
+      // Empty poll (timeout) — retry silently
+      if (events.length === 0) {
+        continue;
+      }
+
+      for (const data of events) {
+        const eventType = data.type as string | undefined;
+
+        // Silently skip these event types
+        if (!eventType || eventType === 'opponent_action' || eventType === 'chat') {
+          continue;
+        }
+
+        // Match found / game started — mark active and continue polling
+        if (eventType === 'match_found' || eventType === 'game_started') {
+          gameActive = true;
+          continue;
+        }
+
+        if (eventType === 'your_turn') {
+          gameActive = true;
+          // Only exit when it's actually our turn (server sends state updates to both players)
+          if (data.your_turn === true) {
+            const board = renderBoard(data);
+            process.stdout.write(board + '\n');
+            process.exit(0);
+          }
+          // your_turn: false means opponent just moved — keep waiting
+          continue;
+        }
+
+        if (eventType === 'game_over' || eventType === 'match_ended') {
+          const winner = data.winner as string | undefined;
+          const reason = data.reason as string | undefined;
+          const yourRole = data.player_role as string | undefined;
+
+          let result: string;
+          if (!winner) {
+            result = 'Draw';
+          } else if (yourRole && winner === yourRole) {
+            result = 'You win!';
+          } else {
+            result = 'Opponent wins';
+          }
+
+          process.stdout.write(`GAME OVER  —  ${result}\n`);
+          if (reason) process.stdout.write(`  ${reason}\n`);
+          process.stdout.write(`  Replay: https://clawfight.live/match/${matchId}\n`);
+          process.exit(1);
+        }
+      }
+
+      // All events processed without a turn — continue polling
+    }
+  });
+
+await checkForUpdates();
 program.parse();
