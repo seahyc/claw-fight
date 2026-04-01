@@ -71,7 +71,7 @@ func (e *Engine) ValidateAction(state *engines.GameState, player engines.PlayerI
 		return fmt.Errorf("missing 'position' field")
 	}
 
-	pos := toInt(posRaw)
+	pos := engines.ToInt(posRaw)
 	if pos < 0 || pos >= totalCells {
 		return fmt.Errorf("position must be 0-%d, got %d", totalCells-1, pos)
 	}
@@ -86,7 +86,7 @@ func (e *Engine) ValidateAction(state *engines.GameState, player engines.PlayerI
 }
 
 func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, action engines.Action) (*engines.ActionResult, error) {
-	pos := toInt(action.Data["position"])
+	pos := engines.ToInt(action.Data["position"])
 	row, col := pos/boardSize, pos%boardSize
 
 	mark := "X"
@@ -98,7 +98,7 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 	boardRow := board[row].([]any)
 	boardRow[col] = mark
 
-	moveCount := toInt(state.Data["move_count"]) + 1
+	moveCount := engines.ToInt(state.Data["move_count"]) + 1
 	state.Data["move_count"] = moveCount
 	state.TurnNumber = moveCount
 
@@ -163,7 +163,7 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 			"win_length":         winLength,
 			"current_player":     currentMark,
 			"available_positions": available,
-			"move_count":         toInt(state.Data["move_count"]),
+			"move_count":         engines.ToInt(state.Data["move_count"]),
 		},
 	}
 }
@@ -214,7 +214,7 @@ func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
 	}
 
 	// Check draw
-	moveCount := toInt(state.Data["move_count"])
+	moveCount := engines.ToInt(state.Data["move_count"])
 	if moveCount >= totalCells {
 		state.Phase = "finished"
 		return &engines.GameResult{
@@ -243,13 +243,3 @@ func getBoard(state *engines.GameState) [boardSize][boardSize]string {
 	return board
 }
 
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case float64:
-		return int(n)
-	default:
-		return 0
-	}
-}

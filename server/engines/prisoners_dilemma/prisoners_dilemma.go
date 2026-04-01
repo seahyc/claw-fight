@@ -124,7 +124,7 @@ func (e *Engine) ValidateAction(state *engines.GameState, player engines.PlayerI
 	// Spy round: block spy from submitting before non-spy
 	event := e.getOrGenerateEvent(state)
 	if event != nil && event["type"] == "spy_round" {
-		spyIdx := toInt(event["spy_player"])
+		spyIdx := engines.ToInt(event["spy_player"])
 		if int(spyIdx) >= 0 && int(spyIdx) < len(state.Players) {
 			spyPlayer := state.Players[spyIdx]
 			if player == spyPlayer && len(roundChoices) == 0 {
@@ -147,7 +147,7 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 
 	// Spy round: if non-spy submitted first, reveal to spy and wait
 	if event != nil && event["type"] == "spy_round" && len(roundChoices) == 1 {
-		spyIdx := toInt(event["spy_player"])
+		spyIdx := engines.ToInt(event["spy_player"])
 		if spyIdx >= 0 && spyIdx < len(state.Players) {
 			spyPlayer := state.Players[spyIdx]
 			if player != spyPlayer {
@@ -189,17 +189,17 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 	dangerZone := state.Data["danger_zone"].(map[string]any)
 	dz1 := dangerZone[string(p1)].(map[string]any)
 	dz2 := dangerZone[string(p2)].(map[string]any)
-	if toBool(dz1["active"]) {
+	if engines.ToBool(dz1["active"]) {
 		s1 = s1 * 3 / 2
 	}
-	if toBool(dz2["active"]) {
+	if engines.ToBool(dz2["active"]) {
 		s2 = s2 * 3 / 2
 	}
 
 	// Update cumulative scores
 	scores := state.Data["scores"].(map[string]any)
-	scores[string(p1)] = toInt(scores[string(p1)]) + s1
-	scores[string(p2)] = toInt(scores[string(p2)]) + s2
+	scores[string(p1)] = engines.ToInt(scores[string(p1)]) + s1
+	scores[string(p2)] = engines.ToInt(scores[string(p2)]) + s2
 
 	// Update danger zone
 	updateDangerZone(dangerZone, state.Players, scores)
@@ -246,8 +246,8 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 				string(p2): s2,
 			},
 			"cumulative_scores": map[string]any{
-				string(p1): toInt(scores[string(p1)]),
-				string(p2): toInt(scores[string(p2)]),
+				string(p1): engines.ToInt(scores[string(p1)]),
+				string(p2): engines.ToInt(scores[string(p2)]),
 			},
 		},
 	}, nil
@@ -256,7 +256,7 @@ func (e *Engine) ApplyAction(state *engines.GameState, player engines.PlayerID, 
 func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID) *engines.PlayerView {
 	scores := state.Data["scores"].(map[string]any)
 	roundChoices := state.Data["round_choices"].(map[string]any)
-	totalRounds := toInt(state.Data["total_rounds"])
+	totalRounds := engines.ToInt(state.Data["total_rounds"])
 	history := state.Data["history"].([]any)
 
 	_, hasSubmitted := roundChoices[string(player)]
@@ -314,7 +314,7 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 	// Score board
 	scoreBoard := make(map[string]any)
 	for _, p := range state.Players {
-		scoreBoard[string(p)] = toInt(scores[string(p)])
+		scoreBoard[string(p)] = engines.ToInt(scores[string(p)])
 	}
 
 	// Fuzzy rounds remaining
@@ -334,7 +334,7 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		}
 		// If spy round and this player is the spy, include revealed choice
 		if event["type"] == "spy_round" {
-			spyIdx := toInt(event["spy_player"])
+			spyIdx := engines.ToInt(event["spy_player"])
 			if spyIdx >= 0 && spyIdx < len(state.Players) && state.Players[spyIdx] == player {
 				if revealed, ok := state.Data["spy_revealed_choice"]; ok {
 					currentEvent["opponent_revealed_choice"] = revealed
@@ -382,8 +382,8 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 		"full_history_length": len(history),
 		"waiting":             hasSubmitted,
 		"secret_objective":    secretObjective,
-		"danger_zone":         toBool(playerDZ["active"]),
-		"opponent_danger_zone": toBool(opponentDZ["active"]),
+		"danger_zone":         engines.ToBool(playerDZ["active"]),
+		"opponent_danger_zone": engines.ToBool(opponentDZ["active"]),
 	}
 	if currentEvent != nil {
 		gameSpecific["current_event"] = currentEvent
@@ -401,13 +401,13 @@ func (e *Engine) GetPlayerView(state *engines.GameState, player engines.PlayerID
 }
 
 func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
-	totalRounds := toInt(state.Data["total_rounds"])
+	totalRounds := engines.ToInt(state.Data["total_rounds"])
 	roundChoices := state.Data["round_choices"].(map[string]any)
 	scores := state.Data["scores"].(map[string]any)
 	p1 := state.Players[0]
 	p2 := state.Players[1]
-	s1 := toInt(scores[string(p1)])
-	s2 := toInt(scores[string(p2)])
+	s1 := engines.ToInt(scores[string(p1)])
+	s2 := engines.ToInt(scores[string(p2)])
 
 	// Elimination check
 	eliminated := false
@@ -429,13 +429,13 @@ func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
 		objData := state.Data["secret_objectives"].(map[string]any)[string(p)].(map[string]any)
 		objName := objData["name"].(string)
 		if checkObjective(state, p, objName) {
-			scores[string(p)] = toInt(scores[string(p)]) + 20
+			scores[string(p)] = engines.ToInt(scores[string(p)]) + 20
 		}
 	}
 
 	// Re-read scores after bonus
-	s1 = toInt(scores[string(p1)])
-	s2 = toInt(scores[string(p2)])
+	s1 = engines.ToInt(scores[string(p1)])
+	s2 = engines.ToInt(scores[string(p2)])
 
 	resultScores := map[engines.PlayerID]int{p1: s1, p2: s2}
 	state.Phase = "finished"
@@ -583,15 +583,15 @@ func applyChaosModifier(event map[string]any, c1, c2 string, s1, s2 int) (int, i
 func updateDangerZone(dangerZone map[string]any, players []engines.PlayerID, scores map[string]any) {
 	p1 := players[0]
 	p2 := players[1]
-	s1 := toInt(scores[string(p1)])
-	s2 := toInt(scores[string(p2)])
+	s1 := engines.ToInt(scores[string(p1)])
+	s2 := engines.ToInt(scores[string(p2)])
 
 	for i, p := range players {
 		dz := dangerZone[string(p)].(map[string]any)
-		active := toBool(dz["active"])
+		active := engines.ToBool(dz["active"])
 
 		if active {
-			remaining := toInt(dz["rounds_remaining"]) - 1
+			remaining := engines.ToInt(dz["rounds_remaining"]) - 1
 			if remaining <= 0 {
 				dz["active"] = false
 				dz["rounds_remaining"] = 0
@@ -744,26 +744,6 @@ func calculateScores(c1, c2 string) (s1, s2 int) {
 	default:
 		return 1, 1
 	}
-}
-
-// --- Utilities ---
-
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case float64:
-		return int(n)
-	default:
-		return 0
-	}
-}
-
-func toBool(v any) bool {
-	if b, ok := v.(bool); ok {
-		return b
-	}
-	return false
 }
 
 func cryptoRandInt(minVal, maxVal int) int {

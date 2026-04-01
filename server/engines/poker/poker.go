@@ -2,7 +2,6 @@ package poker
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -60,10 +59,10 @@ func (e *PokerEngine) InitGame(players []engines.PlayerID, options map[string]an
 }
 
 func startNewHand(state *engines.GameState) {
-	handNum := getInt(state.Data, "hand_number") + 1
+	handNum := engines.GetInt(state.Data, "hand_number") + 1
 	state.Data["hand_number"] = handNum
 
-	dealer := getInt(state.Data, "dealer")
+	dealer := engines.GetInt(state.Data, "dealer")
 	chips := getChips(state)
 
 	// Shuffle deck
@@ -112,7 +111,7 @@ func startNewHand(state *engines.GameState) {
 	state.Data["all_in_players"] = map[string]bool{}
 
 	// Check if either player is all-in from blinds
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 	if chips[sbID] == 0 {
 		allIn[sbID] = true
 	}
@@ -127,7 +126,7 @@ func startNewHand(state *engines.GameState) {
 
 	// If SB is all-in from posting blind, skip to BB
 	if allIn[sbID] {
-		acted := getStringBoolMap(state.Data, "acted_this_round")
+		acted := engines.GetStringBoolMap(state.Data, "acted_this_round")
 		acted[sbID] = true
 		state.Data["acted_this_round"] = acted
 		state.CurrentTurn = state.Players[bbPlayer]
@@ -147,15 +146,15 @@ func (e *PokerEngine) ValidateAction(state *engines.GameState, player engines.Pl
 		return fmt.Errorf("not your turn")
 	}
 
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 	if allIn[string(player)] {
 		return fmt.Errorf("you are all-in, no actions available")
 	}
 
 	chips := getChips(state)
 	playerChips := chips[string(player)]
-	currentBet := getInt(state.Data, "current_bet")
-	playerBets := getStringIntMap(state.Data, "player_bets")
+	currentBet := engines.GetInt(state.Data, "current_bet")
+	playerBets := engines.GetStringIntMap(state.Data, "player_bets")
 	toCall := currentBet - playerBets[string(player)]
 
 	switch action.Type {
@@ -175,7 +174,7 @@ func (e *PokerEngine) ValidateAction(state *engines.GameState, player engines.Pl
 		if toCall > 0 {
 			return fmt.Errorf("cannot bet when there is a bet to call, use raise")
 		}
-		amount, err := getActionAmount(action)
+		amount, err := engines.GetActionAmount(action)
 		if err != nil {
 			return err
 		}
@@ -190,7 +189,7 @@ func (e *PokerEngine) ValidateAction(state *engines.GameState, player engines.Pl
 		if toCall == 0 {
 			return fmt.Errorf("nothing to raise, use bet instead")
 		}
-		amount, err := getActionAmount(action)
+		amount, err := engines.GetActionAmount(action)
 		if err != nil {
 			return err
 		}
@@ -219,11 +218,11 @@ func (e *PokerEngine) ApplyAction(state *engines.GameState, player engines.Playe
 
 	chips := getChips(state)
 	playerChips := chips[string(player)]
-	currentBet := getInt(state.Data, "current_bet")
-	playerBets := getStringIntMap(state.Data, "player_bets")
-	pot := getInt(state.Data, "pot")
-	acted := getStringBoolMap(state.Data, "acted_this_round")
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	currentBet := engines.GetInt(state.Data, "current_bet")
+	playerBets := engines.GetStringIntMap(state.Data, "player_bets")
+	pot := engines.GetInt(state.Data, "pot")
+	acted := engines.GetStringBoolMap(state.Data, "acted_this_round")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 	pid := string(player)
 	toCall := currentBet - playerBets[pid]
 
@@ -234,7 +233,7 @@ func (e *PokerEngine) ApplyAction(state *engines.GameState, player engines.Playe
 		result.Message = fmt.Sprintf("%s folds", pid)
 		state.Data["folded"] = pid
 		// Award pot to other player
-		other := otherPlayer(state, player)
+		other := engines.OtherPlayer(state, player)
 		chips[string(other)] += pot
 		state.Data["pot"] = 0
 		state.Data["chips"] = chips
@@ -258,7 +257,7 @@ func (e *PokerEngine) ApplyAction(state *engines.GameState, player engines.Playe
 		}
 
 	case "bet":
-		amount, _ := getActionAmount(action)
+		amount, _ := engines.GetActionAmount(action)
 		if amount > playerChips {
 			amount = playerChips
 		}
@@ -281,7 +280,7 @@ func (e *PokerEngine) ApplyAction(state *engines.GameState, player engines.Playe
 		}
 
 	case "raise":
-		amount, _ := getActionAmount(action) // total raise-to
+		amount, _ := engines.GetActionAmount(action) // total raise-to
 		needed := min(amount-playerBets[pid], playerChips)
 		chips[pid] -= needed
 		playerBets[pid] += needed
@@ -335,8 +334,8 @@ func (e *PokerEngine) ApplyAction(state *engines.GameState, player engines.Playe
 }
 
 func advanceBetting(state *engines.GameState) {
-	acted := getStringBoolMap(state.Data, "acted_this_round")
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	acted := engines.GetStringBoolMap(state.Data, "acted_this_round")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 
 	// Check if all non-all-in players have acted
 	allActed := true
@@ -352,8 +351,8 @@ func advanceBetting(state *engines.GameState) {
 
 	if !allActed {
 		// Find next player to act
-		dealer := getInt(state.Data, "dealer")
-		round := getString(state.Data, "betting_round")
+		dealer := engines.GetInt(state.Data, "dealer")
+		round := engines.GetString(state.Data, "betting_round")
 		var first int
 		if round == phasePreflop {
 			first = dealer // SB/dealer acts first preflop in heads-up
@@ -391,10 +390,10 @@ func advanceToNextRound(state *engines.GameState) {
 	state.Data["acted_this_round"] = map[string]bool{}
 	state.Data["last_raiser"] = ""
 
-	dealer := getInt(state.Data, "dealer")
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	dealer := engines.GetInt(state.Data, "dealer")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 
-	round := getString(state.Data, "betting_round")
+	round := engines.GetString(state.Data, "betting_round")
 	switch round {
 	case phasePreflop:
 		dealCommunity(state, 3) // flop
@@ -432,7 +431,7 @@ func advanceToNextRound(state *engines.GameState) {
 }
 
 func runOutBoard(state *engines.GameState) {
-	round := getString(state.Data, "betting_round")
+	round := engines.GetString(state.Data, "betting_round")
 	switch round {
 	case phasePreflop:
 		dealCommunity(state, 3)
@@ -448,9 +447,9 @@ func runOutBoard(state *engines.GameState) {
 }
 
 func dealCommunity(state *engines.GameState, count int) {
-	deck := getStringSlice(state.Data, "deck")
-	pos := getInt(state.Data, "deck_pos")
-	community := getStringSlice(state.Data, "community")
+	deck := engines.GetStringSlice(state.Data, "deck")
+	pos := engines.GetInt(state.Data, "deck_pos")
+	community := engines.GetStringSlice(state.Data, "community")
 
 	for range count {
 		community = append(community, deck[pos])
@@ -465,9 +464,9 @@ func resolveShowdown(state *engines.GameState) {
 	state.Data["betting_round"] = phaseShowdown
 
 	hands := getHands(state)
-	community := getStringSlice(state.Data, "community")
+	community := engines.GetStringSlice(state.Data, "community")
 	chips := getChips(state)
-	pot := getInt(state.Data, "pot")
+	pot := engines.GetInt(state.Data, "pot")
 
 	p0 := string(state.Players[0])
 	p1 := string(state.Players[1])
@@ -510,7 +509,7 @@ func resolveShowdown(state *engines.GameState) {
 
 func finishHand(state *engines.GameState) {
 	chips := getChips(state)
-	handNum := getInt(state.Data, "hand_number")
+	handNum := engines.GetInt(state.Data, "hand_number")
 
 	p0 := string(state.Players[0])
 	p1 := string(state.Players[1])
@@ -522,7 +521,7 @@ func finishHand(state *engines.GameState) {
 	}
 
 	// Rotate dealer and start next hand
-	dealer := getInt(state.Data, "dealer")
+	dealer := engines.GetInt(state.Data, "dealer")
 	state.Data["dealer"] = 1 - dealer
 
 	// Clean up hand-specific data
@@ -537,15 +536,15 @@ func (e *PokerEngine) GetPlayerView(state *engines.GameState, player engines.Pla
 	pid := string(player)
 	chips := getChips(state)
 	hands := getHands(state)
-	community := getStringSlice(state.Data, "community")
-	pot := getInt(state.Data, "pot")
-	currentBet := getInt(state.Data, "current_bet")
-	playerBets := getStringIntMap(state.Data, "player_bets")
-	dealer := getInt(state.Data, "dealer")
-	handNum := getInt(state.Data, "hand_number")
-	allIn := getStringBoolMap(state.Data, "all_in_players")
+	community := engines.GetStringSlice(state.Data, "community")
+	pot := engines.GetInt(state.Data, "pot")
+	currentBet := engines.GetInt(state.Data, "current_bet")
+	playerBets := engines.GetStringIntMap(state.Data, "player_bets")
+	dealer := engines.GetInt(state.Data, "dealer")
+	handNum := engines.GetInt(state.Data, "hand_number")
+	allIn := engines.GetStringBoolMap(state.Data, "all_in_players")
 
-	otherPID := string(otherPlayer(state, player))
+	otherPID := string(engines.OtherPlayer(state, player))
 
 	isMyTurn := state.CurrentTurn == player && state.Phase != phaseFinished && state.Phase != phaseShowdown
 
@@ -662,13 +661,6 @@ func (e *PokerEngine) CheckGameOver(state *engines.GameState) *engines.GameResul
 
 // --- Helpers ---
 
-func otherPlayer(state *engines.GameState, player engines.PlayerID) engines.PlayerID {
-	if state.Players[0] == player {
-		return state.Players[1]
-	}
-	return state.Players[0]
-}
-
 func shuffleDeck() []string {
 	suits := []byte{'s', 'h', 'd', 'c'}
 	values := []byte{'2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'}
@@ -687,49 +679,8 @@ func shuffleDeck() []string {
 	return deck
 }
 
-func getActionAmount(action engines.Action) (int, error) {
-	amountRaw, ok := action.Data["amount"]
-	if !ok {
-		return 0, fmt.Errorf("amount is required")
-	}
-	switch v := amountRaw.(type) {
-	case float64:
-		return int(v), nil
-	case int:
-		return v, nil
-	case json.Number:
-		n, err := v.Int64()
-		return int(n), err
-	default:
-		return 0, fmt.Errorf("amount must be a number")
-	}
-}
-
-func getInt(data map[string]any, key string) int {
-	v, ok := data[key]
-	if !ok {
-		return 0
-	}
-	switch n := v.(type) {
-	case int:
-		return n
-	case float64:
-		return int(n)
-	}
-	return 0
-}
-
-func getString(data map[string]any, key string) string {
-	v, ok := data[key]
-	if !ok {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
-}
-
 func getChips(state *engines.GameState) map[string]int {
-	return getStringIntMap(state.Data, "chips")
+	return engines.GetStringIntMap(state.Data, "chips")
 }
 
 func getHands(state *engines.GameState) map[string][]string {
@@ -759,62 +710,3 @@ func getHands(state *engines.GameState) map[string][]string {
 	return map[string][]string{}
 }
 
-func getStringSlice(data map[string]any, key string) []string {
-	raw, ok := data[key]
-	if !ok {
-		return []string{}
-	}
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []any:
-		result := make([]string, len(v))
-		for i, item := range v {
-			result[i], _ = item.(string)
-		}
-		return result
-	}
-	return []string{}
-}
-
-func getStringIntMap(data map[string]any, key string) map[string]int {
-	raw, ok := data[key]
-	if !ok {
-		return map[string]int{}
-	}
-	switch v := raw.(type) {
-	case map[string]int:
-		return v
-	case map[string]any:
-		result := map[string]int{}
-		for k, val := range v {
-			switch n := val.(type) {
-			case int:
-				result[k] = n
-			case float64:
-				result[k] = int(n)
-			}
-		}
-		return result
-	}
-	return map[string]int{}
-}
-
-func getStringBoolMap(data map[string]any, key string) map[string]bool {
-	raw, ok := data[key]
-	if !ok {
-		return map[string]bool{}
-	}
-	switch v := raw.(type) {
-	case map[string]bool:
-		return v
-	case map[string]any:
-		result := map[string]bool{}
-		for k, val := range v {
-			b, _ := val.(bool)
-			result[k] = b
-		}
-		return result
-	}
-	return map[string]bool{}
-}

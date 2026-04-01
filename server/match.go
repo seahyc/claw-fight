@@ -1003,8 +1003,8 @@ func (mm *MatchManager) buildPrisonersSpectatorState(m *Match) map[string]any {
 		rsMap := rs.(map[string]any)
 		s1, _ := rsMap[p1]
 		s2, _ := rsMap[p2]
-		cumP1 += toInt(s1)
-		cumP2 += toInt(s2)
+		cumP1 += engines.ToInt(s1)
+		cumP2 += engines.ToInt(s2)
 		scoreHistory = append(scoreHistory, []int{cumP1, cumP2})
 	}
 
@@ -1053,17 +1053,6 @@ func (mm *MatchManager) buildPrisonersSpectatorState(m *Match) map[string]any {
 	}
 
 	return result
-}
-
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case float64:
-		return int(n)
-	default:
-		return 0
-	}
 }
 
 func (mm *MatchManager) buildPokerSpectatorState(m *Match) map[string]any {
@@ -1237,7 +1226,7 @@ func (mm *MatchManager) buildTictactoeSpectatorState(m *Match) map[string]any {
 		"board":          board,
 		"board_size":     boardSize,
 		"current_player": currentPlayer,
-		"move_count":     toInt(data["move_count"]),
+		"move_count":     engines.ToInt(data["move_count"]),
 	}
 }
 
