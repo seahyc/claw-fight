@@ -291,9 +291,7 @@ func (s *Server) handleAPIMatchChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, p := range players {
-		if c := s.hub.GetClientByPlayer(p); c != nil {
-			c.QueueEvent(chatEvent)
-		}
+		s.hub.DeliverEvent(p, chatEvent)
 	}
 
 	s.hub.BroadcastToSpectators(matchID, chatEvent)

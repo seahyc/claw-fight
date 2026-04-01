@@ -449,9 +449,7 @@ func (s *Server) handleChat(client *Client, msg WSMessage) {
 	// Queue to other players
 	for _, p := range players {
 		if p != client.playerID {
-			if c := s.hub.GetClientByPlayer(p); c != nil {
-				c.QueueEvent(chatEvent)
-			}
+			s.hub.DeliverEvent(p, chatEvent)
 		}
 	}
 

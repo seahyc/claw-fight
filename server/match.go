@@ -343,9 +343,9 @@ func (mm *MatchManager) startGame(m *Match) {
 				"type":     "game_start",
 				"match_id": m.ID,
 			})
-			view := m.Engine.GetPlayerView(state, engines.PlayerID(pid))
-			mm.sendPlayerTurn(c, m.ID, view)
 		}
+		view := m.Engine.GetPlayerView(state, engines.PlayerID(pid))
+		mm.sendPlayerTurn(pid, m.ID, view)
 	}
 
 	mm.broadcastSpectatorState(m)
@@ -467,10 +467,8 @@ func (mm *MatchManager) HandleAction(matchID, playerID string, action engines.Ac
 	// Update current turn and send state
 	m.CurrentTurn = string(m.State.CurrentTurn)
 	for _, p := range m.Players {
-		if c := mm.hub.GetClientByPlayer(p); c != nil {
-			view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
-			mm.sendPlayerTurn(c, m.ID, view)
-		}
+		view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+		mm.sendPlayerTurn(p, m.ID, view)
 	}
 
 	mm.broadcastSpectatorState(m)
@@ -525,10 +523,8 @@ func (mm *MatchManager) startTurnTimer(m *Match) {
 		}
 
 		for _, p := range m.Players {
-			if c := mm.hub.GetClientByPlayer(p); c != nil {
-				view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
-				mm.sendPlayerTurn(c, m.ID, view)
-			}
+			view := m.Engine.GetPlayerView(m.State, engines.PlayerID(p))
+			mm.sendPlayerTurn(p, m.ID, view)
 		}
 		mm.startTurnTimer(m)
 	})
@@ -562,16 +558,14 @@ func (mm *MatchManager) finishMatch(m *Match, result *engines.GameResult) {
 
 	// Notify players via event queue
 	for _, p := range m.Players {
-		if c := mm.hub.GetClientByPlayer(p); c != nil {
-			c.QueueEvent(map[string]any{
-				"type":     "game_over",
-				"match_id": m.ID,
-				"winner":   string(result.Winner),
-				"draw":     result.Draw,
-				"scores":   result.Scores,
-				"reason":   result.Reason,
-			})
-		}
+		mm.hub.DeliverEvent(p, map[string]any{
+			"type":     "game_over",
+			"match_id": m.ID,
+			"winner":   string(result.Winner),
+			"draw":     result.Draw,
+			"scores":   result.Scores,
+			"reason":   result.Reason,
+		})
 	}
 
 	// Notify spectators
@@ -632,8 +626,8 @@ func waitingFor(view *engines.PlayerView) any {
 	}
 }
 
-func (mm *MatchManager) sendPlayerTurn(c *Client, matchID string, view *engines.PlayerView) {
-	c.QueueEvent(map[string]any{
+func (mm *MatchManager) sendPlayerTurn(playerID string, matchID string, view *engines.PlayerView) {
+	mm.hub.DeliverEvent(playerID, map[string]any{
 		"type":              "your_turn",
 		"match_id":          matchID,
 		"phase":             view.Phase,
@@ -827,13 +821,11 @@ func (mm *MatchManager) QuitMatch(matchID, playerID string) error {
 
 	// Notify remaining players that opponent left
 	for _, pid := range m.Players {
-		if c := mm.hub.GetClientByPlayer(pid); c != nil {
-			c.QueueEvent(map[string]any{
-				"type":     "opponent_left",
-				"match_id": m.ID,
-				"message":  "Your opponent has left the match. Waiting for a new player.",
-			})
-		}
+		mm.hub.DeliverEvent(pid, map[string]any{
+			"type":     "opponent_left",
+			"match_id": m.ID,
+			"message":  "Your opponent has left the match. Waiting for a new player.",
+		})
 	}
 
 	log.Printf("Player %s quit match %s", playerID, matchID)
@@ -874,13 +866,11 @@ func (mm *MatchManager) EndMatch(matchID, playerID string) error {
 	// Notify all connected players
 	for _, pid := range m.Players {
 		if pid != playerID {
-			if c := mm.hub.GetClientByPlayer(pid); c != nil {
-				c.QueueEvent(map[string]any{
-					"type":     "match_ended",
-					"match_id": m.ID,
-					"message":  "The match has been ended.",
-				})
-			}
+			mm.hub.DeliverEvent(pid, map[string]any{
+				"type":     "match_ended",
+				"match_id": m.ID,
+				"message":  "The match has been ended.",
+			})
 		}
 	}
 

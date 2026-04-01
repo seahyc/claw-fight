@@ -53,14 +53,12 @@ func (mm *MatchManager) HandlePlayerDisconnect(playerID string) {
 	// Notify opponent
 	for _, pid := range activeMatch.Players {
 		if pid != playerID {
-			if c := mm.hub.GetClientByPlayer(pid); c != nil {
-				c.QueueEvent(map[string]any{
-					"type":          "opponent_disconnected",
-					"match_id":      activeMatch.ID,
-					"message":       "Your opponent has disconnected. They have 5 minutes to reconnect.",
-					"grace_seconds": int(disconnectGrace.Seconds()),
-				})
-			}
+			mm.hub.DeliverEvent(pid, map[string]any{
+				"type":          "opponent_disconnected",
+				"match_id":      activeMatch.ID,
+				"message":       "Your opponent has disconnected. They have 5 minutes to reconnect.",
+				"grace_seconds": int(disconnectGrace.Seconds()),
+			})
 		}
 	}
 
@@ -138,13 +136,11 @@ func (mm *MatchManager) HandlePlayerReconnect(playerID string) {
 	// Notify opponent
 	for _, pid := range activeMatch.Players {
 		if pid != playerID {
-			if c := mm.hub.GetClientByPlayer(pid); c != nil {
-				c.QueueEvent(map[string]any{
-					"type":     "opponent_reconnected",
-					"match_id": activeMatch.ID,
-					"message":  "Your opponent has reconnected.",
-				})
-			}
+			mm.hub.DeliverEvent(pid, map[string]any{
+				"type":     "opponent_reconnected",
+				"match_id": activeMatch.ID,
+				"message":  "Your opponent has reconnected.",
+			})
 		}
 	}
 
@@ -157,9 +153,9 @@ func (mm *MatchManager) HandlePlayerReconnect(playerID string) {
 	// Send current game state to reconnected player
 	if c := mm.hub.GetClientByPlayer(playerID); c != nil {
 		c.matchID = activeMatch.ID
-		if activeMatch.State != nil {
-			view := activeMatch.Engine.GetPlayerView(activeMatch.State, engines.PlayerID(playerID))
-			mm.sendPlayerTurn(c, activeMatch.ID, view)
-		}
+	}
+	if activeMatch.State != nil {
+		view := activeMatch.Engine.GetPlayerView(activeMatch.State, engines.PlayerID(playerID))
+		mm.sendPlayerTurn(playerID, activeMatch.ID, view)
 	}
 }

@@ -43,16 +43,20 @@ type Hub struct {
 	unregister        chan *Client
 	byPlayer          map[string]*Client // playerID -> client
 	disconnectHandler DisconnectHandler
+	restSinks         map[string]*RESTSink
 }
 
 func NewHub() *Hub {
-	return &Hub{
+	h := &Hub{
 		clients:    make(map[*Client]bool),
 		spectators: make(map[string]map[*Client]bool),
 		register:   make(chan *Client, 64),
 		unregister: make(chan *Client, 64),
 		byPlayer:   make(map[string]*Client),
+		restSinks:  make(map[string]*RESTSink),
 	}
+	go h.cleanupRESTSinks()
+	return h
 }
 
 func (h *Hub) Run() {
@@ -101,6 +105,109 @@ func (h *Hub) GetClientByPlayer(playerID string) *Client {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.byPlayer[playerID]
+}
+
+// RESTSink queues events for players using HTTP long-poll instead of WebSocket.
+type RESTSink struct {
+	mu       sync.Mutex
+	events   []map[string]any
+	eventCh  chan struct{}
+	lastUsed time.Time
+}
+
+func newRESTSink() *RESTSink {
+	return &RESTSink{
+		eventCh:  make(chan struct{}, 1),
+		lastUsed: time.Now(),
+	}
+}
+
+func (rs *RESTSink) enqueue(event map[string]any) {
+	rs.mu.Lock()
+	rs.events = append(rs.events, event)
+	rs.lastUsed = time.Now()
+	rs.mu.Unlock()
+	select {
+	case rs.eventCh <- struct{}{}:
+	default:
+	}
+}
+
+func (rs *RESTSink) drain(matchID string, types []string) []map[string]any {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.lastUsed = time.Now()
+	if len(rs.events) == 0 {
+		return nil
+	}
+	var result, remaining []map[string]any
+	for _, ev := range rs.events {
+		match := true
+		if matchID != "" {
+			if mid, ok := ev["match_id"].(string); ok && mid != matchID {
+				match = false
+			}
+		}
+		if match && len(types) > 0 {
+			evType, _ := ev["type"].(string)
+			found := false
+			for _, t := range types {
+				if t == evType {
+					found = true
+					break
+				}
+			}
+			if !found {
+				match = false
+			}
+		}
+		if match {
+			result = append(result, ev)
+		} else {
+			remaining = append(remaining, ev)
+		}
+	}
+	rs.events = remaining
+	return result
+}
+
+// GetOrCreateRESTSink returns the REST sink for a player, creating one if needed.
+func (h *Hub) GetOrCreateRESTSink(playerID string) *RESTSink {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.restSinks[playerID] == nil {
+		h.restSinks[playerID] = newRESTSink()
+	}
+	return h.restSinks[playerID]
+}
+
+// DeliverEvent sends an event to a player via WebSocket (preferred) or REST sink.
+func (h *Hub) DeliverEvent(playerID string, event map[string]any) {
+	h.mu.RLock()
+	c := h.byPlayer[playerID]
+	sink := h.restSinks[playerID]
+	h.mu.RUnlock()
+
+	if c != nil {
+		c.QueueEvent(event)
+	} else if sink != nil {
+		sink.enqueue(event)
+	}
+	// If neither exists, event is dropped (player not connected)
+}
+
+func (h *Hub) cleanupRESTSinks() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		h.mu.Lock()
+		for id, sink := range h.restSinks {
+			if time.Since(sink.lastUsed) > 10*time.Minute {
+				delete(h.restSinks, id)
+			}
+		}
+		h.mu.Unlock()
+	}
 }
 
 func (h *Hub) RegisterPlayer(client *Client, playerID string) {

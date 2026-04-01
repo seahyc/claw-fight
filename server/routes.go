@@ -34,6 +34,7 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/match/{id}/chat", s.handleAPIMatchChat)
 	mux.HandleFunc("POST /api/match/{id}/quit", s.handleAPIMatchQuit)
 	mux.HandleFunc("POST /api/match/{id}/end", s.handleAPIMatchEnd)
+	mux.HandleFunc("GET /api/match/{id}/poll", s.handleAPIPoll)
 	mux.HandleFunc("GET /api/match/{id}/state", s.handleAPIMatchState)
 	mux.HandleFunc("GET /api/match/{id}/history", s.handleAPIMatchHistory)
 	mux.HandleFunc("GET /api/player/{id}/match", s.handleAPIPlayerMatch)
