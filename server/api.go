@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/claw-fight/server/engines"
@@ -599,4 +600,47 @@ func handleAPIDeploy(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Deploy: build complete, exiting for systemd restart...")
 	os.Exit(0)
+}
+
+func (s *Server) handleAPIMatches(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "completed" {
+		limit := 10
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		matches, err := s.db.GetRecentMatches(limit)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, matches)
+		return
+	}
+	matches, err := s.db.GetActiveMatches()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, matches)
+}
+
+func (s *Server) handleAPILeaderboard(w http.ResponseWriter, r *http.Request) {
+	gameType := r.URL.Query().Get("game")
+	if gameType == "" {
+		gameType = "battleship"
+	}
+	limit := 50
+	entries, err := s.db.GetLeaderboard(gameType, limit)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, entries)
+}
+
+func (s *Server) handleAPIGames(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.matchMgr.ListGames())
 }
