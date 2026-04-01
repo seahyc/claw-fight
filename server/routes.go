@@ -41,6 +41,9 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/game/{type}/rules", s.handleAPIGameRules)
 	mux.HandleFunc("GET /api/matches/open", s.handleAPIOpenMatches)
 
+	// Auth
+	mux.HandleFunc("POST /api/auth/token", s.handleAPIAuthToken)
+
 	// Deploy webhook
 	mux.HandleFunc("POST /api/deploy", handleAPIDeploy)
 

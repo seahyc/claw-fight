@@ -10,7 +10,7 @@ import (
 // Blocks up to timeout seconds (default 30, max 300) and returns accumulated events.
 func (s *Server) handleAPIPoll(w http.ResponseWriter, r *http.Request) {
 	matchID := r.PathValue("id")
-	playerID := r.URL.Query().Get("player_id")
+	playerID := playerIDFromRequest(r)
 	if playerID == "" {
 		http.Error(w, "player_id is required", 400)
 		return
