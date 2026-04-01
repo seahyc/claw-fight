@@ -618,64 +618,73 @@ program
         process.exit(1);
       }
 
-      let data: Record<string, unknown>;
+      let response: { events: Record<string, unknown>[] };
       try {
-        data = await fetchApi(
+        response = await fetchApi(
           serverUrl,
           'GET',
           `/api/match/${matchId}/poll?player_id=${playerID}&timeout=55`
-        ) as Record<string, unknown>;
+        ) as { events: Record<string, unknown>[] };
       } catch (err) {
         process.stderr.write(`Poll error: ${err instanceof Error ? err.message : String(err)}\n`);
         process.exit(1);
       }
 
-      const eventType = data.type as string | undefined;
+      const events = response.events ?? [];
 
-      // Empty / timeout — retry silently
-      if (!eventType || eventType === 'timeout' || eventType === 'no_event') {
+      // Empty poll (timeout) — retry silently
+      if (events.length === 0) {
         continue;
       }
 
-      // Silently skip these event types
-      if (eventType === 'opponent_action' || eventType === 'chat') {
-        continue;
-      }
+      for (const data of events) {
+        const eventType = data.type as string | undefined;
 
-      // Match found / game started — mark active and continue polling
-      if (eventType === 'match_found' || eventType === 'game_started') {
-        gameActive = true;
-        continue;
-      }
-
-      if (eventType === 'your_turn') {
-        gameActive = true;
-        const board = renderBoard(data);
-        process.stdout.write(board + '\n');
-        process.exit(0);
-      }
-
-      if (eventType === 'game_over' || eventType === 'match_ended') {
-        const winner = data.winner as string | undefined;
-        const reason = data.reason as string | undefined;
-        const yourRole = data.player_role as string | undefined;
-
-        let result: string;
-        if (!winner) {
-          result = 'Draw';
-        } else if (yourRole && winner === yourRole) {
-          result = 'You win!';
-        } else {
-          result = 'Opponent wins';
+        // Silently skip these event types
+        if (!eventType || eventType === 'opponent_action' || eventType === 'chat') {
+          continue;
         }
 
-        process.stdout.write(`GAME OVER  —  ${result}\n`);
-        if (reason) process.stdout.write(`  ${reason}\n`);
-        process.stdout.write(`  Replay: https://clawfight.live/match/${matchId}\n`);
-        process.exit(1);
+        // Match found / game started — mark active and continue polling
+        if (eventType === 'match_found' || eventType === 'game_started') {
+          gameActive = true;
+          continue;
+        }
+
+        if (eventType === 'your_turn') {
+          gameActive = true;
+          // Only exit when it's actually our turn (server sends state updates to both players)
+          if (data.your_turn === true) {
+            const board = renderBoard(data);
+            process.stdout.write(board + '\n');
+            process.exit(0);
+          }
+          // your_turn: false means opponent just moved — keep waiting
+          continue;
+        }
+
+        if (eventType === 'game_over' || eventType === 'match_ended') {
+          const winner = data.winner as string | undefined;
+          const reason = data.reason as string | undefined;
+          const yourRole = data.player_role as string | undefined;
+
+          let result: string;
+          if (!winner) {
+            result = 'Draw';
+          } else if (yourRole && winner === yourRole) {
+            result = 'You win!';
+          } else {
+            result = 'Opponent wins';
+          }
+
+          process.stdout.write(`GAME OVER  —  ${result}\n`);
+          if (reason) process.stdout.write(`  ${reason}\n`);
+          process.stdout.write(`  Replay: https://clawfight.live/match/${matchId}\n`);
+          process.exit(1);
+        }
       }
 
-      // Unknown event — continue polling
+      // All events processed without a turn — continue polling
     }
   });
 
