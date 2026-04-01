@@ -58,4 +58,5 @@ type GameEngine interface {
 	GetPlayerView(state *GameState, player PlayerID) *PlayerView
 	CheckGameOver(state *GameState) *GameResult
 	DescribeRules() string
+	GetSpectatorView(state *GameState) map[string]any
 }

@@ -540,6 +540,59 @@ func parseCoord(s string) (row, col int, err error) {
 	return row, col, nil
 }
 
+func (e *Engine) GetSpectatorView(state *engines.GameState) map[string]any {
+	views := make(map[string]any)
+	shipStatus := make(map[string]any)
+	for _, pid := range state.Players {
+		p := string(pid)
+		pv := e.GetPlayerView(state, pid)
+		views[p] = pv
+		if gs, ok := pv.GameSpecific["ships"]; ok {
+			switch ships := gs.(type) {
+			case []map[string]any:
+				total := len(ships)
+				sunk := 0
+				for _, ship := range ships {
+					if isSunk, ok := ship["sunk"].(bool); ok && isSunk {
+						sunk++
+					}
+				}
+				shipStatus[p] = map[string]any{"sunk": sunk, "total": total}
+			case []any:
+				total := len(ships)
+				sunk := 0
+				for _, s := range ships {
+					if ship, ok := s.(map[string]any); ok {
+						if isSunk, ok := ship["sunk"].(bool); ok && isSunk {
+							sunk++
+						}
+					}
+				}
+				shipStatus[p] = map[string]any{"sunk": sunk, "total": total}
+			}
+		}
+	}
+
+	result := map[string]any{
+		"views":       views,
+		"ship_status": shipStatus,
+	}
+
+	if len(state.ActionLog) > 0 {
+		lastEntry := state.ActionLog[len(state.ActionLog)-1]
+		if lastEntry.Action.Type == "fire" {
+			if target, ok := lastEntry.Action.Data["target"]; ok {
+				result["last_action"] = map[string]any{
+					"player": string(lastEntry.Player),
+					"target": target,
+				}
+			}
+		}
+	}
+
+	return result
+}
+
 func shipCells(r1, c1, r2, c2 int) [][2]int {
 	var cells [][2]int
 	if r1 == r2 {

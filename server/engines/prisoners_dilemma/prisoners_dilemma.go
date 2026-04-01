@@ -746,6 +746,101 @@ func calculateScores(c1, c2 string) (s1, s2 int) {
 	}
 }
 
+func (e *Engine) GetSpectatorView(state *engines.GameState) map[string]any {
+	data := state.Data
+	scores := data["scores"].(map[string]any)
+	history := data["history"].([]any)
+	totalRounds := data["total_rounds"]
+
+	p1 := string(state.Players[0])
+	p2 := string(state.Players[1])
+
+	scoreArr := []any{scores[p1], scores[p2]}
+
+	coopCounts := map[string]int{p1: 0, p2: 0}
+	for _, h := range history {
+		hMap := h.(map[string]any)
+		if hMap[p1] == "cooperate" {
+			coopCounts[p1]++
+		}
+		if hMap[p2] == "cooperate" {
+			coopCounts[p2]++
+		}
+	}
+	var coopRates []float64
+	if len(history) > 0 {
+		coopRates = []float64{
+			float64(coopCounts[p1]) / float64(len(history)),
+			float64(coopCounts[p2]) / float64(len(history)),
+		}
+	} else {
+		coopRates = []float64{0, 0}
+	}
+
+	moves := make([][]string, len(history))
+	for i, h := range history {
+		hMap := h.(map[string]any)
+		c1, _ := hMap[p1].(string)
+		c2, _ := hMap[p2].(string)
+		moves[i] = []string{c1, c2}
+	}
+
+	scoreHistory := make([][]int, 0, len(history))
+	roundScores, _ := data["round_scores"].([]any)
+	cumP1, cumP2 := 0, 0
+	for _, rs := range roundScores {
+		rsMap := rs.(map[string]any)
+		s1, _ := rsMap[p1]
+		s2, _ := rsMap[p2]
+		cumP1 += engines.ToInt(s1)
+		cumP2 += engines.ToInt(s2)
+		scoreHistory = append(scoreHistory, []int{cumP1, cumP2})
+	}
+
+	result := map[string]any{
+		"current_round":     state.TurnNumber + 1,
+		"total_rounds":      totalRounds,
+		"scores":            scoreArr,
+		"cooperation_rates": coopRates,
+		"moves":             moves,
+		"score_history":     scoreHistory,
+	}
+
+	if events, ok := data["events"].(map[string]any); ok {
+		roundKey := fmt.Sprintf("%d", state.TurnNumber)
+		if event, ok := events[roundKey]; ok {
+			result["current_event"] = event
+		}
+	}
+
+	if objectives, ok := data["secret_objectives"].(map[string]any); ok {
+		spectatorObjs := make([]map[string]any, 2)
+		for i, pid := range []string{p1, p2} {
+			if obj, ok := objectives[pid].(map[string]any); ok {
+				spectatorObjs[i] = map[string]any{
+					"name":        obj["name"],
+					"description": obj["description"],
+				}
+			} else {
+				spectatorObjs[i] = map[string]any{}
+			}
+		}
+		result["secret_objectives"] = spectatorObjs
+	}
+
+	if dangerZone, ok := data["danger_zone"].(map[string]any); ok {
+		dzStatus := make([]bool, 2)
+		for i, pid := range []string{p1, p2} {
+			if dz, ok := dangerZone[pid].(map[string]any); ok {
+				dzStatus[i], _ = dz["active"].(bool)
+			}
+		}
+		result["danger_zone"] = dzStatus
+	}
+
+	return result
+}
+
 func cryptoRandInt(minVal, maxVal int) int {
 	diff := maxVal - minVal
 	if diff <= 0 {

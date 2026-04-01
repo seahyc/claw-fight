@@ -710,3 +710,92 @@ func getHands(state *engines.GameState) map[string][]string {
 	return map[string][]string{}
 }
 
+// parseCardStrings converts card data ([]string like ["Ah","Kd"] or []any) into
+// card objects [{value, suit}] for the poker renderer.
+func parseCardStrings(raw any) []map[string]any {
+	var strs []string
+	switch v := raw.(type) {
+	case []string:
+		strs = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				strs = append(strs, s)
+			}
+		}
+	default:
+		return nil
+	}
+
+	cards := make([]map[string]any, len(strs))
+	for i, s := range strs {
+		if len(s) >= 2 {
+			cards[i] = map[string]any{
+				"value": string(s[0]),
+				"suit":  string(s[1]),
+			}
+		} else {
+			cards[i] = map[string]any{"face_down": true}
+		}
+	}
+	return cards
+}
+
+func (e *PokerEngine) GetSpectatorView(state *engines.GameState) map[string]any {
+	data := state.Data
+	chips := data["chips"].(map[string]any)
+	community, _ := data["community"]
+	pot := data["pot"]
+	playerBets, _ := data["player_bets"]
+	allIn, _ := data["all_in_players"]
+	hands, _ := data["hands"]
+
+	p1 := string(state.Players[0])
+	p2 := string(state.Players[1])
+
+	handsMap, _ := hands.(map[string]any)
+	betsMap, _ := playerBets.(map[string]any)
+	allInMap, _ := allIn.(map[string]any)
+
+	communityCards := parseCardStrings(community)
+
+	showCards := state.Phase == "showdown" || state.Phase == "finished"
+	showdownResult, _ := data["showdown_result"].(map[string]any)
+	if showdownResult != nil {
+		showCards = true
+	}
+
+	players := make([]map[string]any, 2)
+	for i, pid := range []string{p1, p2} {
+		p := map[string]any{
+			"chips": chips[pid],
+		}
+		if betsMap != nil {
+			p["current_bet"] = betsMap[pid]
+		}
+		if allInMap != nil && allInMap[pid] == true {
+			p["last_action"] = "ALL IN"
+		}
+		if showCards && handsMap != nil {
+			p["hand"] = parseCardStrings(handsMap[pid])
+		} else {
+			p["hand"] = []map[string]any{{}, {}}
+		}
+		players[i] = p
+	}
+
+	result := map[string]any{
+		"community_cards": communityCards,
+		"pot":             pot,
+		"players":         players,
+		"phase":           state.Phase,
+		"hand_number":     data["hand_number"],
+	}
+
+	if showdownResult != nil {
+		result["showdown"] = showdownResult
+	}
+
+	return result
+}
+

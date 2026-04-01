@@ -227,6 +227,37 @@ func (e *Engine) CheckGameOver(state *engines.GameState) *engines.GameResult {
 	return nil
 }
 
+func (e *Engine) GetSpectatorView(state *engines.GameState) map[string]any {
+	data := state.Data
+	rawBoard := data["board"].([]any)
+
+	sz := len(rawBoard)
+	board := make([][]string, sz)
+	for i, rowRaw := range rawBoard {
+		row := rowRaw.([]any)
+		board[i] = make([]string, len(row))
+		for j, cell := range row {
+			if s, ok := cell.(string); ok {
+				board[i][j] = s
+			} else {
+				board[i][j] = ""
+			}
+		}
+	}
+
+	currentPlayer := "X"
+	if state.CurrentTurn == state.Players[1] {
+		currentPlayer = "O"
+	}
+
+	return map[string]any{
+		"board":          board,
+		"board_size":     sz,
+		"current_player": currentPlayer,
+		"move_count":     engines.ToInt(data["move_count"]),
+	}
+}
+
 // --- Helpers ---
 
 func getBoard(state *engines.GameState) [boardSize][boardSize]string {
