@@ -484,6 +484,10 @@ func (mm *MatchManager) startTurnTimer(m *Match) {
 		return
 	}
 	currentPlayer := m.CurrentTurn
+	if currentPlayer == "" {
+		// Simultaneous game — no single-player timeout
+		return
+	}
 	m.TurnTimer = time.AfterFunc(m.TurnTimeout, func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
