@@ -141,6 +141,10 @@
                 renderPrisonersBoard(state);
             } else if (gameType === 'tictactoe' && typeof renderTictactoeBoard === 'function') {
                 renderTictactoeBoard(state);
+            } else if (boardEl) {
+                // Fallback for games without a board renderer yet
+                boardEl.innerHTML = '<pre style="color:#ccc;font-size:12px;overflow:auto;max-height:500px;padding:12px;">'
+                    + JSON.stringify(state, null, 2) + '</pre>';
             }
         },
 
