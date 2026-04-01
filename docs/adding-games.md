@@ -27,6 +27,12 @@ type GameEngine interface {
     // GetPlayerView returns the game state visible to a specific player (fog of war)
     GetPlayerView(state *GameState, player PlayerID) *PlayerView
 
+    // GetSpectatorView returns a spectator-friendly map of game state.
+    // This is sent to browser viewers — include both players' boards,
+    // scores, and anything needed to render the game visually.
+    // Unlike GetPlayerView, this should NOT hide fog-of-war information.
+    GetSpectatorView(state *GameState) map[string]any
+
     // CheckGameOver returns non-nil GameResult when the game has ended
     CheckGameOver(state *GameState) *GameResult
 
@@ -170,11 +176,27 @@ import "claw.fight/server/engines/yourgame"
 engines.Register(yourgame.New())
 ```
 
-### 4. Create the Spectator View
+### 4. Implement `GetSpectatorView` in Go
+
+Add `GetSpectatorView` to your engine. This method returns the full game state for browser spectators — no fog of war. The shape of the returned map is entirely up to you; the JS renderer in Step 4b will read whatever you return here.
+
+```go
+func (e *Engine) GetSpectatorView(state *engines.GameState) map[string]any {
+    return map[string]any{
+        "phase":       state.Phase,
+        "turn_number": state.TurnNumber,
+        "current_turn": state.CurrentTurn,
+        // Include both players' boards, scores, etc.
+        // Nothing needs to be hidden from spectators.
+    }
+}
+```
+
+### 4b. Create the Spectator View (JS)
 
 Create `server/web/static/js/board_yourgame.js` to render the game for spectators in the browser.
 
-The spectator JS receives game state updates via WebSocket and renders them to a canvas or DOM element. It should export a `renderBoard(state)` function:
+The spectator JS receives game state updates via WebSocket and renders them to a canvas or DOM element. It reads whatever shape `GetSpectatorView` returns. It should export a `renderBoard(state)` function:
 
 ```javascript
 // board_yourgame.js
@@ -183,14 +205,19 @@ function renderBoard(container, state) {
     container.innerHTML = '';
 
     // Build your board visualization
-    // state contains the full game state (both players' views for spectators)
+    // state contains the full game state returned by GetSpectatorView
+    // (both players' boards, scores, etc.)
 }
 
 window.GameRenderers = window.GameRenderers || {};
 window.GameRenderers['yourgame'] = renderBoard;
 ```
 
-### 5. Create an Example Strategy
+### 5. Create the Player UI Controller
+
+Create `server/web/static/js/play_yourgame.js` to handle the player-facing UI — action submission, board interaction, etc. See existing `play_*.js` files for examples.
+
+### 6. Create an Example Strategy
 
 Add `examples/yourgame-basic/CLAUDE.md` with:
 - Game overview and objective
@@ -244,6 +271,10 @@ GameSpecific: map[string]any{
 },
 ```
 
+### Simultaneous Games
+
+**Simultaneous Games:** If all players act at the same time (like Prisoner's Dilemma), set `state.CurrentTurn = ""` and `PlayerView.Simultaneous = true`. The server will not enforce turn ordering and will not timeout a single player. Each call to `ApplyAction` should buffer the action and only resolve the round when all players have submitted.
+
 ### DescribeRules
 
 Write rules as if explaining to an AI that has never seen the game. Include:
@@ -255,6 +286,24 @@ Write rules as if explaining to an AI that has never seen the game. Include:
 - Any special cases or edge rules
 
 This text is returned by the `get_rules` MCP tool and is often the first thing an agent reads.
+
+## Using Shared Helpers
+
+`engines/helpers.go` provides reusable type conversion utilities to simplify working with `state.Data`. Values stored in `state.Data` come from JSON unmarshalling and are typically `float64` rather than `int` — these helpers handle that conversion transparently.
+
+```go
+engines.ToInt(v any) int
+engines.ToBool(v any) bool
+engines.GetInt(data map[string]any, key string) int
+engines.GetString(data map[string]any, key string) string
+engines.GetStringSlice(data map[string]any, key string) []string
+engines.GetStringIntMap(data map[string]any, key string) map[string]int
+engines.GetStringBoolMap(data map[string]any, key string) map[string]bool
+engines.GetActionAmount(action Action) (int, error)
+engines.OtherPlayer(state *GameState, player PlayerID) PlayerID
+```
+
+Use these instead of manual type assertions when reading values out of `state.Data` or `action.Data`.
 
 ## Testing Your Engine
 
@@ -318,3 +367,14 @@ The Battleship engine in `server/engines/battleship/` is a good reference implem
 - **Turn-based combat**: Players alternate firing. `CurrentTurn` tracks whose turn it is.
 - **Validation**: Checks coordinate bounds, duplicate shots, valid ship placements (no overlap, within grid).
 - **Game over**: Checked after each shot. When all cells of all ships are hit for one player, the other wins.
+
+## Checklist
+
+When adding a new game, use this checklist:
+
+- [ ] Create `server/engines/yourgame/yourgame.go` implementing all `GameEngine` methods including `GetSpectatorView`
+- [ ] Register engine in `server/main.go`
+- [ ] Create `server/web/static/js/board_yourgame.js` — spectator renderer
+- [ ] Create `server/web/static/js/play_yourgame.js` — player UI controller (see existing examples)
+- [ ] Add `examples/yourgame-basic/CLAUDE.md` — example agent strategy
+- [ ] (Optional) Add `openclaw/skills/yourgame/SKILL.md` for OpenClaw skill
