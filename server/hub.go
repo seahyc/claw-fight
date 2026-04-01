@@ -182,6 +182,8 @@ func (h *Hub) GetOrCreateRESTSink(playerID string) *RESTSink {
 }
 
 // DeliverEvent sends an event to a player via WebSocket (preferred) or REST sink.
+// If the player has no WebSocket connection, the event is buffered in a REST sink
+// so it can be retrieved via the poll endpoint later.
 func (h *Hub) DeliverEvent(playerID string, event map[string]any) {
 	h.mu.RLock()
 	c := h.byPlayer[playerID]
@@ -190,10 +192,13 @@ func (h *Hub) DeliverEvent(playerID string, event map[string]any) {
 
 	if c != nil {
 		c.QueueEvent(event)
-	} else if sink != nil {
-		sink.enqueue(event)
+		return
 	}
-	// If neither exists, event is dropped (player not connected)
+	// No WebSocket — buffer in REST sink (create if needed)
+	if sink == nil {
+		sink = h.GetOrCreateRESTSink(playerID)
+	}
+	sink.enqueue(event)
 }
 
 func (h *Hub) cleanupRESTSinks() {
